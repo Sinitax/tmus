@@ -8,5 +8,8 @@ all: main
 clean:
 	rm main
 
-main: main.c
-	$(CC) -o $@ $< $(CFLAGS) $(LDLIBS)
+%.o: %.c %.h
+	$(CC) -c -o $@ $< $(CFLAGS) $(LDLIBS)
+
+main: main.c util.o history.o link.o
+	$(CC) -o $@ $^ $(CFLAGS) $(LDLIBS)

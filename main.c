@@ -1,27 +1,19 @@
-#define _XOPEN_SOURCE 500
+#define _XOPEN_SOURCE 600
 
-#include <stdlib.h>
+#include "util.h"
+#include "link.h"
+#include "history.h"
+
+#include "curses.h"
+
 #include <stdio.h>
-#include <signal.h>
+#include <stdlib.h>
 #include <string.h>
-
-#include <unistd.h>
 #include <time.h>
+#include <unistd.h>
 #include <wchar.h>
 #include <wctype.h>
 
-#include "ncurses.h"
-#include "readline/readline.h"
-#include "readline/history.h"
-
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
-#define MIN(a, b) ((a) > (b) ? (b) : (a))
-#define ARRLEN(x) (sizeof(x)/sizeof((x)[0]))
-
-#define OFFSET(parent, attr) ((size_t) &((type *)0)->attr)
-#define UPCAST(ptr, type) ({ \
-	const typeof( ((type *)0)->link ) *__mptr = (ptr); \
-	(type *)( (char *)__mptr - OFFSET(type, link) ); })
 
 #define ATTR_ON(win, attr) wattr_on((win), (attr), NULL)
 #define ATTR_OFF(win, attr) wattr_off((win), (attr), NULL)
@@ -30,15 +22,26 @@
 
 #define KEY_ESC '\x1b'
 #define KEY_TAB '\t'
+#define KEY_CTRL(c) ((c) & ~0x60)
+
+
+enum {
+	STYLE_DEFAULT,
+	STYLE_TITLE,
+	STYLE_PANE_SEP
+};
+
+enum {
+	EXECUTE,
+	SEARCH
+};
 
 struct pane;
 
-typedef int (*pane_handler)(int c);
+typedef int (*pane_handler)(wint_t c);
 typedef void (*pane_updater)(struct pane *pane, int sel);
-
-struct link {
-	struct link *prev, *next;
-};
+typedef char *(*completion_generator)(const char *text, int state);
+typedef int (*cmd_handler)(const char *args);
 
 struct pane {
 	WINDOW *win;
@@ -71,44 +74,37 @@ struct tag {
 	struct link link;
 };
 
-enum {
-	STYLE_DEFAULT,
-	STYLE_TITLE,
-	STYLE_PANE_SEP
+struct cmd {
+	const char *name;
+	cmd_handler func;
 };
 
-enum {
-	EXECUTE,
-	SEARCH
-};
 
 int scrw, scrh;
 int quit;
 
-struct pane pane_left, pane_right, pane_bot;
-struct pane *pane_sel;
 float win_ratio;
-
-struct track *track_sel;
-struct track *tracks;
-struct track_ref *playlist;
-int track_paused;
-
-int cmdshow, cmdcur;
-int cmdmode;
-
-int rl_input, rl_input_avail;
-
+struct pane *pane_sel;
+struct pane pane_left, pane_right, pane_bot;
 struct pane *const panes[] = {
 	&pane_left,
 	&pane_right,
 	&pane_bot
 };
 
+struct track *track_sel;
+struct track *tracks;
+struct link playlist;
+int track_paused;
+
+completion_generator completion;
+struct history search_history, command_history;
+struct history *history;
+int cmd_show, cmd_mode;
+
+
 void init(void);
 void cleanup(void);
-
-void cancel(int sig);
 
 void resize(void);
 void pane_resize(struct pane *pane,
@@ -117,56 +113,28 @@ void pane_resize(struct pane *pane,
 void pane_init(struct pane *p, pane_handler handle, pane_updater update);
 void pane_title(struct pane *pane, const char *title, int highlight);
 
-char **track_name_completion(const char *text, int start, int end);
+char *command_name_generator(const char *text, int state);
 char *track_name_generator(const char *text, int state);
 
-int readline_getc(FILE *f);
-int readline_input_avail(void);
-void readline_consume(int c);
-int exit_cmdmode(int a, int b);
-
-int strnwidth(const char *str, int len);
-
-void evalcmd(char *cmd);
-
-int track_input(int c);
+int track_input(wint_t c);
 void track_vis(struct pane *pane, int sel);
 
-int tag_input(int c);
+int tag_input(wint_t c);
 void tag_vis(struct pane *pane, int sel);
 
-int cmd_input(int c);
+int cmd_input(wint_t c);
 void cmd_vis(struct pane *pane, int sel);
 
-void main_input(int c);
+void main_input(wint_t c);
 void main_vis(void);
+
 
 void
 init(void)
 {
 	quit = 0;
 	win_ratio = 0.3f;
-	cmdshow = 0;
-	cmdcur = 0;
 
-	/* readline */
-	rl_initialize();
-	rl_input = 0;
-	rl_input_avail = 0;
-
-	rl_catch_signals = 0;
-	rl_catch_sigwinch = 0;
-	rl_deprep_term_function = NULL;
-	rl_prep_term_function = NULL;
-	rl_change_environment = 0;
-
-	rl_getc_function = readline_getc;
-	rl_input_available_hook = readline_input_avail;
-	rl_callback_handler_install("", evalcmd);
-	rl_attempted_completion_function = track_name_completion;
-	rl_bind_key('\x07', exit_cmdmode);
-
-	/* curses */
 	initscr();
 	cbreak();
 	noecho();
@@ -176,7 +144,9 @@ init(void)
 	curs_set(0);
 	ESCDELAY = 0;
 
-	signal(SIGINT, cancel);
+	history = &command_history;
+	history_init(&search_history);
+	history_init(&command_history);
 
 	init_pair(STYLE_TITLE, COLOR_WHITE, COLOR_BLUE);
 	init_pair(STYLE_PANE_SEP, COLOR_BLUE, COLOR_BLACK);
@@ -193,21 +163,13 @@ init(void)
 void
 cleanup(void)
 {
-	rl_callback_handler_remove();
+	history_free(&search_history);
+	history_free(&command_history);
+
 	delwin(pane_left.win);
 	delwin(pane_right.win);
 	delwin(pane_bot.win);
 	endwin();
-}
-
-void
-cancel(int sig)
-{
-	if (pane_sel == &pane_bot) {
-		pane_sel = NULL;
-	} else {
-		quit = 1;
-	}
 }
 
 void
@@ -240,7 +202,6 @@ pane_resize(struct pane *pane, int sx, int sy, int ex, int ey)
 	pane->h = pane->ey - pane->sy;
 
 	pane->active = (pane->w > 0 && pane->h > 0);
-
 	if (pane->active) {
 		wresize(pane->win, pane->h, pane->w);
 		mvwin(pane->win, pane->sy, pane->sx);
@@ -252,6 +213,7 @@ void
 pane_init(struct pane *pane, pane_handler handle, pane_updater update)
 {
 	pane->win = newwin(1, 1, 0, 0);
+	ASSERT(pane->win != NULL);
 	pane->handle = handle;
 	pane->update = update;
 }
@@ -272,28 +234,28 @@ pane_title(struct pane *pane, const char *title, int highlight)
 	STYLE_OFF(pane->win, TITLE);
 }
 
-char **
-track_name_completion(const char *text, int start, int end)
+char *
+command_name_generator(const char *text, int reset)
 {
-	rl_attempted_completion_over = 1;
-	return rl_completion_matches(text, track_name_generator);
+	return NULL;
 }
 
 char *
-track_name_generator(const char *text, int state)
+track_name_generator(const char *text, int reset)
 {
-	static int list_index, len;
+	static int index, len;
 	char *name;
 
-	if (cmdmode != SEARCH) return NULL;
+	if (cmd_mode != SEARCH) return NULL;
 
-	if (!state) {
-		list_index = 0;
+	if (reset) {
+		index = 0;
 		len = strlen(text);
 	}
 
-	if (list_index++ == 0 && !strncmp("hello", text, len))
+	if (index++ == 0 && !strncmp("hello", text, len))
 		return strdup("hello");
+
 	// TODO: iter over playlist
 	// while ((name = track_names[list_index++])) {
 	// 	if (strncmp(name, text, len) == 0) {
@@ -304,75 +266,14 @@ track_name_generator(const char *text, int state)
 	return NULL;
 }
 
-int
-readline_input_avail(void)
-{
-	return rl_input_avail;
-}
-
-int
-readline_getc(FILE *dummy)
-{
-	rl_input_avail = false;
-	return rl_input;
-}
-
 void
-readline_consume(int c)
+tag_init(void)
 {
-	rl_input = c;
-	rl_input_avail = true;
-	rl_callback_read_char();
+	/* TODO: load tags as directory names (excluding unsorted) */
 }
 
 int
-exit_cmdmode(int a, int b)
-{
-	pane_sel = NULL;
-	move(5, 5);
-	wprintw(stdscr, "HIT %i %i", a, b);
-	return 0;
-}
-
-int
-strnwidth(const char *s, int n)
-{
-	mbstate_t shift_state;
-	wchar_t wc;
-	size_t wc_len;
-	size_t width = 0;
-
-	memset(&shift_state, '\0', sizeof shift_state);
-
-	for (size_t i = 0; i < n; i += wc_len) {
-		wc_len = mbrtowc(&wc, s + i, MB_CUR_MAX, &shift_state);
-		if (!wc_len) {
-			break;
-		} else if (wc_len >= (size_t)-2) {
-			width += MIN(n - 1, strlen(s + i));
-			break;
-		} else {
-			width += iswcntrl(wc) ? 2 : MAX(0, wcwidth(wc));
-		}
-	}
-
-done:
-	return width;
-}
-
-void
-evalcmd(char *line)
-{
-	if (!line || !*line) {
-		pane_sel = NULL;
-		return;
-	}
-
-	if (*line) add_history(line);
-}
-
-int
-tag_input(int c)
+tag_input(wint_t c)
 {
 	return 0;
 }
@@ -384,8 +285,14 @@ tag_vis(struct pane *pane, int sel)
 	pane_title(pane, "Tags", sel);
 }
 
+void
+track_init(void)
+{
+	/* TODO: for each tag director load track names */
+}
+
 int
-track_input(int c)
+track_input(wint_t c)
 {
 	return 0;
 }
@@ -398,16 +305,59 @@ track_vis(struct pane *pane, int sel)
 }
 
 int
-cmd_input(int c)
+cmd_input(wint_t c)
 {
-	readline_consume(c);
+	if (cmd_mode == EXECUTE) {
+		history = &command_history;
+		completion = command_name_generator;
+	} else {
+		history = &search_history;
+		completion = track_name_generator;
+	}
+
+	switch (c) {
+	case KEY_ESC:
+		if (history->cmd == history->query)
+			return 0;
+		history->cmd = history->query;
+		break;
+	case KEY_LEFT:
+		inputln_left(history->cmd);
+		break;
+	case KEY_RIGHT:
+		inputln_right(history->cmd);
+		break;
+	case KEY_CTRL('w'):
+		inputln_del(history->cmd, history->cmd->cur);
+		break;
+	case KEY_UP:
+		// TODO: show visually that no more matches
+		history_next(history);
+		break;
+	case KEY_DOWN:
+		history_prev(history);
+		break;
+	case '\n':
+	case KEY_ENTER:
+		history_submit(history);
+		break;
+	case KEY_TAB:
+		break;
+	case KEY_BACKSPACE:
+		inputln_del(history->cmd, 1);
+		break;
+	default:
+		if (!iswprint(c)) return 0;
+		inputln_addch(history->cmd, c);
+		break;
+	}
 	return 1;
 }
 
 void
 cmd_vis(struct pane *pane, int sel)
 {
-	int in_range;
+	struct inputln *cmd;
 
 	werase(pane->win);
 
@@ -416,23 +366,23 @@ cmd_vis(struct pane *pane, int sel)
 	else
 		pane_title(pane, "", 0);
 
-	if (sel || cmdshow) {
+	if (sel || cmd_show) {
 		wmove(pane->win, 2, 0);
-		waddch(pane->win, cmdmode == SEARCH ? '/' : ':');
-		wprintw(pane->win, "%-*.*s", pane->w - 1, pane->w - 1, rl_line_buffer);
+		waddch(pane->win, cmd_mode == SEARCH ? '/' : ':');
+		cmd = history->cmd;
+		wprintw(pane->win, "%-*.*ls", pane->w - 1, pane->w - 1, cmd->buf);
+		// TODO: if query != cmd, highlight query substr
 		if (sel) {
-			cmdcur = strnwidth(rl_line_buffer, rl_point);
 			ATTR_ON(pane->win, A_REVERSE);
-			wmove(pane->win, 2, 1 + cmdcur);
-			in_range = cmdcur < strlen(rl_line_buffer);
-			waddch(pane->win, in_range ? rl_line_buffer[cmdcur] : ' ');
+			wmove(pane->win, 2, 1 + cmd->cur);
+			waddch(pane->win, cmd->cur < cmd->len ? cmd->buf[cmd->cur] : ' ');
 			ATTR_OFF(pane->win, A_REVERSE);
 		}
 	}
 }
 
 void
-main_input(int c)
+main_input(wint_t c)
 {
 	switch (c) {
 	case KEY_TAB:
@@ -450,16 +400,12 @@ main_input(int c)
 	case KEY_RIGHT:
 		pane_sel = &pane_right;
 		break;
-	case CTRL('c'):
-		quit = 1;
-		break;
 	case ':':
-		cmdmode = EXECUTE;
+		cmd_mode = EXECUTE;
 		pane_sel = &pane_bot;
 		break;
-	case '?':
 	case '/':
-		cmdmode = SEARCH;
+		cmd_mode = SEARCH;
 		pane_sel = &pane_bot;
 		break;
 	}
@@ -486,7 +432,8 @@ main_vis(void)
 int
 main(int argc, const char **argv)
 {
-	int i, c, handled;
+	int i, handled;
+	wint_t c;
 
 	init();
 
@@ -511,9 +458,9 @@ main(int argc, const char **argv)
 		main_vis();
 		doupdate();
 
-		keypad(stdscr, pane_sel != &pane_bot);
-		c = getch();
+		get_wch(&c);
 	} while (!quit);
 
 	cleanup();
 }
+
