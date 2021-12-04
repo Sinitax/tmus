@@ -8,16 +8,23 @@
 	(type *)( (char *)__mptr - OFFSET(type, link) ); })
 
 #define LIST_HEAD ((struct link) { .prev = NULL, .next = NULL })
+#define LINK_EMPTY ((struct link) { 0 })
 
 struct link {
-	struct link *prev, *next;
+	struct link *prev;
+	struct link *next;
 };
 
-int list_len(struct link *list);
-struct link* list_back(struct link *list);
+/* list_XXX functions operate on the list head */
 
-void link_push_back(struct link *list, struct link *link);
+int list_len(struct link *head);
+int list_ffind(struct link *head, struct link *link);
 
+struct link *link_back(struct link *list);
 void link_prepend(struct link *list, struct link *link);
 void link_append(struct link *list, struct link *link);
 void link_pop(struct link *link);
+
+struct link *link_iter(struct link *link, int n);
+
+void link_push_back(struct link *list, struct link *link);

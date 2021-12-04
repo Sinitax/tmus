@@ -10,3 +10,7 @@
 
 int strnwidth(const char *s, int n);
 void assert(int cond, const char *file, int line, const char *condstr);
+
+char *sanitized(const char *instr);
+
+char *aprintf(const char *fmtstr, ...);

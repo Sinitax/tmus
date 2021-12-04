@@ -103,7 +103,8 @@ history_add(struct history *history, struct inputln *line)
 	struct link *back;
 
 	if (list_len(&history->list) == HISTORY_MAX) {
-		back = list_back(&history->list);
+		/* pop last item to make space */
+		back = link_back(&history->list);
 		back->prev->next = NULL;
 		ln = UPCAST(back, struct inputln);
 		inputln_free(ln);
@@ -163,6 +164,7 @@ inputln_addch(struct inputln *line, wchar_t c)
 	for (i = line->len; i > line->cur; i--)
 		line->buf[i] = line->buf[i-1];
 	line->buf[line->cur] = c;
+
 	line->len++;
 	line->cur++;
 }
@@ -177,8 +179,10 @@ inputln_del(struct inputln *line, int n)
 	n = MIN(n, line->cur);
 	for (i = line->cur; i <= line->len; i++)
 		line->buf[i-n] = line->buf[i];
+
 	for (i = line->len - n; i <= line->len; i++)
 		line->buf[i] = 0;
+
 	line->len -= n;
 	line->cur -= n;
 }

@@ -1,39 +1,52 @@
 #define _XOPEN_SOURCE 600
+#define _DEFAULT_SOURCE
 
 #include "util.h"
 #include "link.h"
 #include "history.h"
+#include "tag.h"
+#include "track.h"
+#include "player.h"
 
+#include "sndfile.h"
+#include "portaudio.h"
 #include "curses.h"
 
+#include <dirent.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 #include <wchar.h>
 #include <wctype.h>
 
-
-#define ATTR_ON(win, attr) wattr_on((win), (attr), NULL)
-#define ATTR_OFF(win, attr) wattr_off((win), (attr), NULL)
-#define STYLE_ON(win, style) ATTR_ON((win), COLOR_PAIR(STYLE_ ## style))
-#define STYLE_OFF(win, style) ATTR_OFF((win), COLOR_PAIR(STYLE_ ## style))
-
+#undef KEY_ENTER
+#define KEY_ENTER '\n'
+#define KEY_SPACE ' '
 #define KEY_ESC '\x1b'
 #define KEY_TAB '\t'
 #define KEY_CTRL(c) ((c) & ~0x60)
 
+#define ATTR_ON(win, attr) wattr_on(win, attr, NULL)
+#define ATTR_OFF(win, attr) wattr_off(win, attr, NULL)
 
 enum {
 	STYLE_DEFAULT,
 	STYLE_TITLE,
-	STYLE_PANE_SEP
+	STYLE_PANE_SEP,
+	STYLE_ITEM_SEL,
+	STYLE_ITEM_HOVER,
+	STYLE_ITEM_HOVER_SEL,
+	STYLE_COUNT
 };
 
 enum {
-	EXECUTE,
-	SEARCH
+	IMODE_EXECUTE,
+	IMODE_SEARCH
 };
 
 struct pane;
@@ -53,33 +66,15 @@ struct pane {
 	pane_updater update;
 };
 
-struct track {
-	char *title;
-	char *artist;
-	float duration;
-	struct link *tags;
-
-	struct link link;
-};
-
-struct track_ref {
-	struct track *track;
-
-	struct link link;
-};
-
-struct tag {
-	const char *name;
-
-	struct link link;
-};
-
 struct cmd {
 	const char *name;
 	cmd_handler func;
 };
 
 
+int style_attrs[STYLE_COUNT] = { 0 };
+
+const char *datadir;
 int scrw, scrh;
 int quit;
 
@@ -92,8 +87,10 @@ struct pane *const panes[] = {
 	&pane_bot
 };
 
+struct link tags;
+
 struct track *track_sel;
-struct track *tracks;
+struct link tracks;
 struct link playlist;
 int track_paused;
 
@@ -102,9 +99,20 @@ struct history search_history, command_history;
 struct history *history;
 int cmd_show, cmd_mode;
 
+int tag_index;
+struct link tags_sel;
+
+int track_index;
+
 
 void init(void);
 void cleanup(void);
+
+void data_load(void);
+void tracks_load(struct tag *tag);
+
+void data_save(void);
+void tracks_save(struct tag *tag);
 
 void resize(void);
 void pane_resize(struct pane *pane,
@@ -113,20 +121,31 @@ void pane_resize(struct pane *pane,
 void pane_init(struct pane *p, pane_handler handle, pane_updater update);
 void pane_title(struct pane *pane, const char *title, int highlight);
 
+void style_init(int style, int fg, int bg, int attr);
+void style_on(WINDOW *win, int style);
+void style_off(WINDOW *win, int style);
+
 char *command_name_generator(const char *text, int state);
 char *track_name_generator(const char *text, int state);
 
-int track_input(wint_t c);
-void track_vis(struct pane *pane, int sel);
-
 int tag_input(wint_t c);
 void tag_vis(struct pane *pane, int sel);
+
+int track_input(wint_t c);
+void track_vis(struct pane *pane, int sel);
 
 int cmd_input(wint_t c);
 void cmd_vis(struct pane *pane, int sel);
 
 void main_input(wint_t c);
 void main_vis(void);
+
+int usercmd_save(const char *args);
+
+
+const struct cmd cmds[] = {
+	{ "save", usercmd_save },
+};
 
 
 void
@@ -138,6 +157,7 @@ init(void)
 	initscr();
 	cbreak();
 	noecho();
+	halfdelay(1);
 	intrflush(stdscr, FALSE);
 	keypad(stdscr, TRUE);
 	start_color();
@@ -148,8 +168,12 @@ init(void)
 	history_init(&search_history);
 	history_init(&command_history);
 
-	init_pair(STYLE_TITLE, COLOR_WHITE, COLOR_BLUE);
-	init_pair(STYLE_PANE_SEP, COLOR_BLUE, COLOR_BLACK);
+	style_init(STYLE_DEFAULT, COLOR_WHITE, COLOR_BLACK, 0);
+	style_init(STYLE_TITLE, COLOR_WHITE, COLOR_BLUE, A_BOLD);
+	style_init(STYLE_PANE_SEP, COLOR_BLUE, COLOR_BLACK, 0);
+	style_init(STYLE_ITEM_SEL, COLOR_YELLOW, COLOR_BLACK, A_BOLD);
+	style_init(STYLE_ITEM_HOVER, COLOR_WHITE, COLOR_BLUE, 0);
+	style_init(STYLE_ITEM_HOVER_SEL, COLOR_YELLOW, COLOR_BLUE, A_BOLD);
 
 	pane_init(&pane_left, tag_input, tag_vis);
 	pane_init(&pane_right, track_input, track_vis);
@@ -157,12 +181,34 @@ init(void)
 
 	pane_sel = &pane_left;
 
+	datadir = getenv("TMUS_DATA");
+	ASSERT(datadir != NULL);
+
+	track_index = 0;
+	tag_index = 0;
+	tags_sel = LIST_HEAD;
+
+	// player = player_thread();
+
+	data_load();
+
 	atexit(cleanup);
 }
 
 void
 cleanup(void)
 {
+	int status;
+
+	// TODO stop player
+
+	data_save();
+
+	kill(player->pid, SIGTERM);
+	waitpid(player->pid, &status, 0);
+
+	// TODO free player
+
 	history_free(&search_history);
 	history_free(&command_history);
 
@@ -170,6 +216,83 @@ cleanup(void)
 	delwin(pane_right.win);
 	delwin(pane_bot.win);
 	endwin();
+}
+
+void
+data_load(void)
+{
+	struct dirent *ent;
+	struct tag *tag;
+	DIR *dir;
+
+	tags = LIST_HEAD;
+
+	dir = opendir(datadir);
+	ASSERT(dir != NULL);
+	while ((ent = readdir(dir))) {
+		if (ent->d_type != DT_DIR)
+			continue;
+		if (!strcmp(ent->d_name, "."))
+			continue;
+		if (!strcmp(ent->d_name, ".."))
+			continue;
+
+		tag = malloc(sizeof(struct tag));
+		ASSERT(tag != NULL);
+		tag->fname = strdup(ent->d_name);
+		ASSERT(tag->fname != NULL);
+		tag->fpath = aprintf("%s/%s", datadir, ent->d_name);
+		ASSERT(tag->fpath != NULL);
+		tag->name = sanitized(tag->fname);
+		ASSERT(tag->name != NULL);
+		tag->link = LINK_EMPTY;
+		link_push_back(&tags, &tag->link);
+
+		tracks_load(tag);
+	}
+	closedir(dir);
+}
+
+void
+tracks_load(struct tag *tag)
+{
+	struct dirent *ent;
+	struct track *track;
+	struct tag_ref *tagref;
+	DIR *dir;
+
+	dir = opendir(tag->fpath);
+	ASSERT(dir != NULL);
+	while ((ent = readdir(dir))) {
+		if (ent->d_type != DT_REG)
+			continue;
+		if (!strcmp(ent->d_name, "."))
+			continue;
+		if (!strcmp(ent->d_name, ".."))
+			continue;
+
+		track = track_init(tag->fpath, ent->d_name);
+		tagref = malloc(sizeof(struct tag_ref));
+		ASSERT(tagref != NULL);
+		tagref->tag = tag;
+		tagref->link = LINK_EMPTY;
+		link_push_back(&track->tags, &tagref->link);
+
+		link_push_back(&tracks, &track->link);
+	}
+	closedir(dir);
+}
+
+void
+data_save(void)
+{
+	
+}
+
+void
+tracks_save(struct tag *tag)
+{
+
 }
 
 void
@@ -223,91 +346,210 @@ pane_title(struct pane *pane, const char *title, int highlight)
 {
 	wmove(pane->win, 0, 0);
 
-	STYLE_ON(pane->win, TITLE);
-	ATTR_ON(pane->win, A_BOLD);
+	style_on(pane->win, STYLE_TITLE);
 	if (highlight) ATTR_ON(pane->win, A_STANDOUT);
 
 	wprintw(pane->win, " %-*.*s", pane->w - 1, pane->w - 1, title);
 
 	if (highlight) ATTR_OFF(pane->win, A_STANDOUT);
-	ATTR_OFF(pane->win, A_BOLD);
-	STYLE_OFF(pane->win, TITLE);
+	style_off(pane->win, STYLE_TITLE);
+}
+
+void
+style_init(int style, int fg, int bg, int attr)
+{
+	style_attrs[style] = attr;
+	init_pair(style, fg, bg);
+}
+
+void
+style_on(WINDOW *win, int style)
+{
+	ATTR_ON(win, COLOR_PAIR(style) | style_attrs[style]);
+}
+
+void
+style_off(WINDOW *win, int style)
+{
+	ATTR_OFF(win, COLOR_PAIR(style) | style_attrs[style]);
 }
 
 char *
 command_name_generator(const char *text, int reset)
 {
-	return NULL;
-}
-
-char *
-track_name_generator(const char *text, int reset)
-{
 	static int index, len;
-	char *name;
-
-	if (cmd_mode != SEARCH) return NULL;
 
 	if (reset) {
 		index = 0;
 		len = strlen(text);
 	}
 
-	if (index++ == 0 && !strncmp("hello", text, len))
-		return strdup("hello");
-
-	// TODO: iter over playlist
-	// while ((name = track_names[list_index++])) {
-	// 	if (strncmp(name, text, len) == 0) {
-	// 		return strdup(name);
-	// 	}
-	// }
+	for (; index < ARRLEN(cmds); index++) {
+		if (!strncmp(cmds[index].name, text, len))
+			return strdup(cmds[index].name);
+	}
 
 	return NULL;
 }
 
-void
-tag_init(void)
+char *
+track_name_generator(const char *text, int reset)
 {
-	/* TODO: load tags as directory names (excluding unsorted) */
+	static struct link *cur;
+	struct track *track;
+	static int len;
+
+	if (reset) {
+		cur = tracks.next;
+		len = strlen(text);
+	}
+
+	for (; cur; cur = cur->next) {
+		track = UPCAST(cur, struct track);
+		if (!strncmp(track->name, text, len))
+			return strdup(track->name);
+	}
+
+	return NULL;
 }
 
 int
 tag_input(wint_t c)
 {
+	struct link *cur;
+	struct tag *tag;
+
+	switch (c) {
+	case KEY_UP:
+		tag_index = MAX(0, tag_index - 1);
+		return 1;
+	case KEY_DOWN:
+		tag_index = MIN(list_len(&tags) - 1,
+				tag_index + 1);
+		return 1;
+	case KEY_SPACE:
+		cur = link_iter(tags.next, tag_index);
+		ASSERT(cur != NULL);
+		tag = UPCAST(cur, struct tag);
+		if (tagrefs_incl(&tags_sel, tag)) {
+			tagrefs_rm(&tags_sel, tag);
+		} else {
+			tagrefs_add(&tags_sel, tag);
+		}
+		return 1;
+	}
+
 	return 0;
 }
 
 void
 tag_vis(struct pane *pane, int sel)
 {
+	struct tag *tag, *tag2;
+	struct link *iter, *iter2;
+	int index, tsel;
+
 	werase(pane->win);
 	pane_title(pane, "Tags", sel);
-}
 
-void
-track_init(void)
-{
-	/* TODO: for each tag director load track names */
+	index = 0;
+	for (iter = tags.next; iter; iter = iter->next) {
+		tag = UPCAST(iter, struct tag);
+		tsel = tagrefs_incl(&tags_sel, tag);
+
+		if (sel && index == tag_index && tsel)
+			style_on(pane->win, STYLE_ITEM_HOVER_SEL);
+		else if (sel && index == tag_index)
+			style_on(pane->win, STYLE_ITEM_HOVER);
+		else if (tsel)
+			style_on(pane->win, STYLE_ITEM_SEL);
+
+		wmove(pane->win, 1 + index, 0);
+		wprintw(pane->win, "%*.*s", pane->w, pane->w, tag->name);
+
+		if (index == tag_index && tsel)
+			style_off(pane->win, STYLE_ITEM_HOVER_SEL);
+		else if (index == tag_index)
+			style_off(pane->win, STYLE_ITEM_HOVER);
+		else if (tsel)
+			style_off(pane->win, STYLE_ITEM_SEL);
+		index++;
+	}
 }
 
 int
 track_input(wint_t c)
 {
+	struct link *link;
+	struct track *track;
+
+	switch (c) {
+	case KEY_UP:
+		track_index = MAX(0, track_index - 1);
+		return 1;
+	case KEY_DOWN:
+		track_index = MIN(list_len(&tracks) - 1,
+				track_index + 1);
+		return 1;
+	case KEY_ENTER:
+		link = link_iter(tracks.next, track_index);
+		ASSERT(link != NULL);
+		track = UPCAST(link, struct track);
+		if (track != track_sel) {
+			track_sel = track;
+			track_paused = 0;
+		} else {
+			track_paused ^= 1;
+		}
+		// if (!track_paused)
+		// 	track_play();
+		// else
+		// 	track_pause();
+		return 1;
+	}
+
 	return 0;
 }
 
 void
 track_vis(struct pane *pane, int sel)
 {
+	struct track *track;
+	struct link *iter;
+	int index;
+
 	werase(pane->win);
 	pane_title(pane, "Tracks", sel);
+
+	index = 0;
+	for (iter = tracks.next; iter; iter = iter->next) {
+		track = UPCAST(iter, struct track);
+
+		if (sel && index == track_index && track == track_sel)
+			style_on(pane->win, STYLE_ITEM_HOVER_SEL);
+		else if (sel && index == track_index)
+			style_on(pane->win, STYLE_ITEM_HOVER);
+		else if (track == track_sel)
+			style_on(pane->win, STYLE_ITEM_SEL);
+
+		wmove(pane->win, 1 + index, 0);
+		wprintw(pane->win, "%-*.*s", pane->w, pane->w, track->name);
+
+		if (sel && index == track_index && track == track_sel)
+			style_off(pane->win, STYLE_ITEM_HOVER_SEL);
+		else if (sel && index == track_index)
+			style_off(pane->win, STYLE_ITEM_HOVER);
+		else if (track == track_sel)
+			style_off(pane->win, STYLE_ITEM_SEL);
+
+		index++;
+	}
 }
 
 int
 cmd_input(wint_t c)
 {
-	if (cmd_mode == EXECUTE) {
+	if (cmd_mode == IMODE_EXECUTE) {
 		history = &command_history;
 		completion = command_name_generator;
 	} else {
@@ -337,9 +579,10 @@ cmd_input(wint_t c)
 	case KEY_DOWN:
 		history_prev(history);
 		break;
-	case '\n':
 	case KEY_ENTER:
 		history_submit(history);
+		if (!*history->cmd->buf)
+			pane_sel = NULL;
 		break;
 	case KEY_TAB:
 		break;
@@ -362,13 +605,17 @@ cmd_vis(struct pane *pane, int sel)
 	werase(pane->win);
 
 	if (track_sel)
-		pane_title(pane, track_sel->title, track_paused);
+		pane_title(pane, track_sel->name, sel);
 	else
-		pane_title(pane, "", 0);
+		pane_title(pane, "", sel);
+
+	static int i = 0;
+	wmove(pane->win, 1, 0);
+	wprintw(pane->win, "%i", i++);
 
 	if (sel || cmd_show) {
 		wmove(pane->win, 2, 0);
-		waddch(pane->win, cmd_mode == SEARCH ? '/' : ':');
+		waddch(pane->win, cmd_mode == IMODE_SEARCH ? '/' : ':');
 		cmd = history->cmd;
 		wprintw(pane->win, "%-*.*ls", pane->w - 1, pane->w - 1, cmd->buf);
 		// TODO: if query != cmd, highlight query substr
@@ -401,11 +648,11 @@ main_input(wint_t c)
 		pane_sel = &pane_right;
 		break;
 	case ':':
-		cmd_mode = EXECUTE;
+		cmd_mode = IMODE_EXECUTE;
 		pane_sel = &pane_bot;
 		break;
 	case '/':
-		cmd_mode = SEARCH;
+		cmd_mode = IMODE_SEARCH;
 		pane_sel = &pane_bot;
 		break;
 	}
@@ -416,17 +663,24 @@ main_vis(void)
 {
 	int i;
 
-	STYLE_ON(stdscr, TITLE);
+	style_on(stdscr, STYLE_TITLE);
 	move(0, pane_left.ex);
 	addch(' ');
-	STYLE_OFF(stdscr, TITLE);
+	style_off(stdscr, STYLE_TITLE);
 
-	STYLE_ON(stdscr, PANE_SEP);
+	style_on(stdscr, STYLE_PANE_SEP);
 	for (i = pane_left.sy + 1; i < pane_left.ey; i++) {
 		move(i, pane_left.ex);
 		addch(ACS_VLINE);
 	}
-	STYLE_OFF(stdscr, PANE_SEP);
+	style_off(stdscr, STYLE_PANE_SEP);
+}
+
+int
+usercmd_save(const char *args)
+{
+	data_save();
+	return 1;
 }
 
 int
@@ -441,7 +695,7 @@ main(int argc, const char **argv)
 	do {
 		if (c == KEY_RESIZE) {
 			resize();
-		} else {
+		} else if (c != ERR) {
 			handled = 0;
 			if (pane_sel && pane_sel->active)
 				handled = pane_sel->handle(c);

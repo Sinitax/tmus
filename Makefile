@@ -1,5 +1,5 @@
-CFLAGS = -I .
-LDLIBS = -lcurses -lreadline
+CFLAGS = -I . -g
+LDLIBS = -lcurses -lreadline -lportaudio -lsndfile
 
 .PHONY: all main
 
@@ -11,5 +11,5 @@ clean:
 %.o: %.c %.h
 	$(CC) -c -o $@ $< $(CFLAGS) $(LDLIBS)
 
-main: main.c util.o history.o link.o
+main: main.c util.o history.o link.o player.o tag.o track.o
 	$(CC) -o $@ $^ $(CFLAGS) $(LDLIBS)
