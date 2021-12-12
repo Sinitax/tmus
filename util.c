@@ -47,25 +47,6 @@ assert(int cond, const char *file, int line, const char *condstr)
 }
 
 char *
-sanitized(const char *instr)
-{
-	const char *p;
-	char *clean;
-	int i;
-
-	clean = strdup(instr);
-	ASSERT(clean != NULL);
-	for (i = 0, p = instr; *p; p++) {
-		if (strchr(allowed, *p))
-			clean[i++] = *p;
-	}
-	ASSERT(i != 0);
-	clean[i] = '\0';
-
-	return clean;
-}
-
-char *
 aprintf(const char *fmtstr, ...)
 {
 	va_list ap, cpy;
@@ -87,3 +68,65 @@ aprintf(const char *fmtstr, ...)
 
 	return str;
 }
+
+char *
+appendstrf(char *alloc, const char *fmtstr, ...)
+{
+	va_list ap, cpy;
+	size_t size, prevlen;
+
+	va_copy(cpy, ap);
+
+	va_start(ap, fmtstr);
+	size = vsnprintf(NULL, 0, fmtstr, ap);
+	va_end(ap);
+
+	prevlen = alloc ? strlen(alloc) : 0;
+	alloc = realloc(alloc, prevlen + size + 1);
+	ASSERT(alloc != NULL);
+
+	va_start(cpy, fmtstr);
+	vsnprintf(alloc + prevlen, size + 1, fmtstr, cpy);
+	va_end(cpy);
+
+	return alloc;
+}
+
+char *
+sanitized(const char *instr)
+{
+	const char *p;
+	char *clean;
+	int i;
+
+	clean = strdup(instr);
+	ASSERT(clean != NULL);
+	for (i = 0, p = instr; *p; p++) {
+		if (strchr(allowed, *p))
+			clean[i++] = *p;
+	}
+	ASSERT(i != 0);
+	clean[i] = '\0';
+
+	return clean;
+}
+
+const char *
+timestr(unsigned int secs)
+{
+	static char buf[16];
+	unsigned int mins, hours;
+
+	hours = secs / 3600;
+	mins = secs / 60 % 60;
+	secs = secs % 60;
+
+	if (hours) {
+		snprintf(buf, sizeof(buf), "%02u:%02u:%02u", hours, mins, secs);
+	} else {
+		snprintf(buf, sizeof(buf), "%02u:%02u", mins, secs);
+	}
+
+	return buf;
+}
+

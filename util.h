@@ -11,6 +11,9 @@
 int strnwidth(const char *s, int n);
 void assert(int cond, const char *file, int line, const char *condstr);
 
+char *aprintf(const char *fmtstr, ...);
+char *appendstrf(char *alloc, const char *fmtstr, ...);
+
 char *sanitized(const char *instr);
 
-char *aprintf(const char *fmtstr, ...);
+const char *timestr(unsigned int seconds);

@@ -1,0 +1,9 @@
+tmus
+====
+
+mpd backend
+-----------
+
+To load songs by path, mpd requires the client to connect via
+a unix socket. Set the environment variable MPD_HOST accordingly.
+

@@ -1,15 +1,21 @@
 CFLAGS = -I . -g
-LDLIBS = -lcurses -lreadline -lportaudio -lsndfile
+LDLIBS = -lcurses -lreadline -lmpdclient
 
-.PHONY: all main
+.PHONY: all tmus clean install uninstall
 
-all: main
+all: tmus
 
 clean:
-	rm main
+	rm tmus
 
 %.o: %.c %.h
 	$(CC) -c -o $@ $< $(CFLAGS) $(LDLIBS)
 
-main: main.c util.o history.o link.o player.o tag.o track.o
+tmus: main.c util.o history.o link.o player.o tag.o track.o
 	$(CC) -o $@ $^ $(CFLAGS) $(LDLIBS)
+
+install:
+	install -m 755 tmus /usr/bin
+
+uninstall:
+	rm /usr/bin/tmus

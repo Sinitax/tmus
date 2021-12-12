@@ -1,54 +1,62 @@
 #pragma once
 
+#include "track.h"
 #include "util.h"
 
-#include "sndfile.h"
+#include "mpd/client.h"
 
 #include <signal.h>
 
 enum {
-	PLAYER_NONE,
-	PLAYER_PAUSE,
-	PLAYER_PLAY,
-	PLAYER_SKIP,
-	PLAYER_PREV,
-	PLAYER_STOP,
-	PLAYER_LOAD,
-	PLAYER_EXIT
+	PLAYER_OK,
+	PLAYER_ERR
 };
 
 enum {
-	PLAYER_NOTSET,
-	PLAYER_OK,
-	PLAYER_FAIL
+	PLAYER_MSG_NONE,
+	PLAYER_MSG_INFO,
+	PLAYER_MSG_ERR
+};
+
+enum {
+	PLAYER_STATE_PAUSED,
+	PLAYER_STATE_PLAYING
 };
 
 struct player {
-	int action, resp;
+	struct mpd_connection *conn;
 
-	int reload;
-	char *filepath;
-	SNDFILE *file;
-	SF_INFO info;
+	struct link queue;
+	struct track *track;
+	int state;
 
-	int sample_index;
+	int volume;
+	unsigned int time_pos, time_end;
 
-	int alive;
-	pid_t pid;
+	char *msg;
+	int msglvl;
 };
 
-struct player *player_thread(void);
+void player_init(void);
+void player_free(void);
+void player_update(void);
 
-void player_main(void);
+void player_queue_clear(void);
+void player_queue_append(struct track *track);
+void player_queue_insert(struct track *track, size_t pos);
 
-int player_alive(void);
+int player_play_track(struct track *track);
 
-void player_loadfile(const char *path);
-void player_action(int action);
-
+int player_toggle_pause(void);
 int player_pause(void);
-int player_play(void);
+int player_resume(void);
 int player_prev(void);
-int player_skip(void);
+int player_next(void);
+int player_seek(int sec);
+
+int player_set_volume(unsigned int vol);
+
+void player_clear_msg(void);
 
 extern struct player *player;
+

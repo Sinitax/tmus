@@ -39,12 +39,15 @@ history_free(struct history *history)
 	struct link *iter, *next;
 	struct inputln *ln;
 
-	for (iter = &history->list; iter; iter = next) {
+	for (iter = history->list.next; iter; iter = next) {
 		next = iter->next;
 		ln = UPCAST(iter, struct inputln);
 		free(ln);
 	}
-	free(history->cmd);
+	history->list = LIST_HEAD;
+	free(history->query);
+	history->query = NULL;
+	history->cmd = NULL;
 }
 
 struct inputln *
