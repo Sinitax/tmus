@@ -7,6 +7,7 @@
 #include "tag.h"
 #include "track.h"
 #include "player.h"
+#include "listnav.h"
 
 #include "mpd/player.h"
 #include "curses.h"
@@ -70,14 +71,13 @@ struct cmd {
 	cmd_handler func;
 };
 
-int style_attrs[STYLE_COUNT] = { 0 };
+int style_attrs[STYLE_COUNT];
 
 const char *datadir;
 int scrw, scrh;
 int quit;
 
-float win_ratio;
-struct pane *pane_sel;
+struct pane *pane_sel, *pane_top_sel;
 struct pane pane_left, pane_right, pane_bot;
 struct pane *const panes[] = {
 	&pane_left,
@@ -85,20 +85,21 @@ struct pane *const panes[] = {
 	&pane_bot
 };
 
-struct link tags;
-
-struct link tracks;
-struct link playlist;
-
 completion_generator completion;
+struct pane *cmd_pane;
 struct history search_history, command_history;
 struct history *history;
 int cmd_show, cmd_mode;
 
-int tag_index;
+struct pane *tag_pane;
+struct listnav tag_nav;
+struct link tags;
 struct link tags_sel;
 
-int track_index;
+struct pane *track_pane;
+struct listnav track_nav;
+struct link playlist;
+struct link tracks;
 
 void init(void);
 void cleanup(void);
@@ -145,8 +146,21 @@ void
 init(void)
 {
 	quit = 0;
-	win_ratio = 0.3f;
 
+	signal(SIGINT, exit);
+	atexit(cleanup);
+
+	history = &command_history;
+	history_init(&search_history);
+	history_init(&command_history);
+
+	datadir = getenv("TMUS_DATA");
+	ASSERT(datadir != NULL);
+	data_load();
+
+	player_init();
+
+	/* ncurses init */
 	initscr();
 	raw();
 	noecho();
@@ -157,10 +171,7 @@ init(void)
 	curs_set(0);
 	ESCDELAY = 0;
 
-	history = &command_history;
-	history_init(&search_history);
-	history_init(&command_history);
-
+	memset(style_attrs, 0, sizeof(style_attrs));
 	style_init(STYLE_DEFAULT, COLOR_WHITE, COLOR_BLACK, 0);
 	style_init(STYLE_TITLE, COLOR_WHITE, COLOR_BLUE, A_BOLD);
 	style_init(STYLE_PANE_SEP, COLOR_BLUE, COLOR_BLACK, 0);
@@ -168,26 +179,16 @@ init(void)
 	style_init(STYLE_ITEM_HOVER, COLOR_WHITE, COLOR_BLUE, 0);
 	style_init(STYLE_ITEM_HOVER_SEL, COLOR_YELLOW, COLOR_BLUE, A_BOLD);
 
-	pane_init(&pane_left, tag_input, tag_vis);
-	pane_init(&pane_right, track_input, track_vis);
-	pane_init(&pane_bot, cmd_input, cmd_vis);
+	pane_init((tag_pane = &pane_left), tag_input, tag_vis);
+	pane_init((track_pane = &pane_right), track_input, track_vis);
+	pane_init((cmd_pane = &pane_bot), cmd_input, cmd_vis);
 
 	pane_sel = &pane_left;
+	pane_top_sel = pane_sel;
 
-	datadir = getenv("TMUS_DATA");
-	ASSERT(datadir != NULL);
-
-	track_index = 0;
-	tag_index = 0;
 	tags_sel = LIST_HEAD;
-
-	player_init();
-
-	data_load();
-
-	signal(SIGINT, exit);
-
-	atexit(cleanup);
+	listnav_init(&tag_nav);
+	listnav_init(&track_nav);
 }
 
 void
@@ -286,7 +287,7 @@ tracks_save(struct tag *tag)
 void
 resize(void)
 {
-	int i;
+	int i, leftw;
 
 	getmaxyx(stdscr, scrh, scrw);
 
@@ -297,7 +298,8 @@ resize(void)
 		usleep(10000);
 	}
 
-	pane_resize(&pane_left, 0, 0, win_ratio * scrw, scrh - 3);
+	leftw = MIN(40, 0.3f * scrw);
+	pane_resize(&pane_left, 0, 0, leftw, scrh - 3);
 	pane_resize(&pane_right, pane_left.ex + 1, 0, scrw, scrh - 3);
 	pane_resize(&pane_bot, 0, scrh - 3, scrw, scrh);
 }
@@ -409,14 +411,13 @@ tag_input(wint_t c)
 
 	switch (c) {
 	case KEY_UP:
-		tag_index = MAX(0, tag_index - 1);
+		listnav_update_sel(&tag_nav, tag_nav.sel - 1);
 		return 1;
 	case KEY_DOWN:
-		tag_index = MIN(list_len(&tags) - 1,
-				tag_index + 1);
+		listnav_update_sel(&tag_nav, tag_nav.sel + 1);
 		return 1;
 	case KEY_SPACE:
-		cur = link_iter(tags.next, tag_index);
+		cur = link_iter(tags.next, tag_nav.sel);
 		ASSERT(cur != NULL);
 		tag = UPCAST(cur, struct tag);
 		if (tagrefs_incl(&tags_sel, tag)) {
@@ -424,6 +425,12 @@ tag_input(wint_t c)
 		} else {
 			tagrefs_add(&tags_sel, tag);
 		}
+		return 1;
+	case KEY_NPAGE:
+		listnav_update_sel(&track_nav, track_nav.sel - track_nav.wlen / 2);
+		return 1;
+	case KEY_PPAGE:
+		listnav_update_sel(&track_nav, track_nav.sel + track_nav.wlen / 2);
 		return 1;
 	}
 
@@ -440,14 +447,17 @@ tag_vis(struct pane *pane, int sel)
 	werase(pane->win);
 	pane_title(pane, "Tags", sel);
 
+	listnav_update_bounds(&tag_nav, 0, list_len(&tags));
+	listnav_update_wlen(&tag_nav, pane->h - 1);
+
 	index = 0;
 	for (iter = tags.next; iter; iter = iter->next) {
 		tag = UPCAST(iter, struct tag);
 		tsel = tagrefs_incl(&tags_sel, tag);
 
-		if (sel && index == tag_index && tsel)
+		if (sel && index == tag_nav.sel && tsel)
 			style_on(pane->win, STYLE_ITEM_HOVER_SEL);
-		else if (sel && index == tag_index)
+		else if (sel && index == tag_nav.sel)
 			style_on(pane->win, STYLE_ITEM_HOVER);
 		else if (tsel)
 			style_on(pane->win, STYLE_ITEM_SEL);
@@ -455,9 +465,9 @@ tag_vis(struct pane *pane, int sel)
 		wmove(pane->win, 1 + index, 0);
 		wprintw(pane->win, "%*.*s", pane->w, pane->w, tag->name);
 
-		if (index == tag_index && tsel)
+		if (index == tag_nav.sel && tsel)
 			style_off(pane->win, STYLE_ITEM_HOVER_SEL);
-		else if (index == tag_index)
+		else if (index == tag_nav.sel)
 			style_off(pane->win, STYLE_ITEM_HOVER);
 		else if (tsel)
 			style_off(pane->win, STYLE_ITEM_SEL);
@@ -473,17 +483,23 @@ track_input(wint_t c)
 
 	switch (c) {
 	case KEY_UP:
-		track_index = MAX(0, track_index - 1);
+		listnav_update_sel(&track_nav, track_nav.sel - 1);
 		return 1;
 	case KEY_DOWN:
-		track_index = MIN(list_len(&tracks) - 1, track_index + 1);
+		listnav_update_sel(&track_nav, track_nav.sel + 1);
 		return 1;
 	case KEY_ENTER:
-		link = link_iter(tracks.next, track_index);
+		link = link_iter(tracks.next, track_nav.sel);
 		ASSERT(link != NULL);
 		track = UPCAST(link, struct track);
 		player->track = track;
 		player_play_track(track);
+		return 1;
+	case KEY_NPAGE:
+		listnav_update_sel(&track_nav, track_nav.sel - track_nav.wlen / 2);
+		return 1;
+	case KEY_PPAGE:
+		listnav_update_sel(&track_nav, track_nav.sel + track_nav.wlen / 2);
 		return 1;
 	}
 
@@ -500,28 +516,35 @@ track_vis(struct pane *pane, int sel)
 	werase(pane->win);
 	pane_title(pane, "Tracks", sel);
 
+	listnav_update_bounds(&track_nav, 0, list_len(&tracks));
+	listnav_update_wlen(&track_nav, pane->h - 1);
+
+	wmove(pane->win, 0, 45);
+	wprintw(pane->win, "%i %i", list_len(&tracks), track_nav.sel);
+
 	index = 0;
-	for (iter = tracks.next; iter; iter = iter->next) {
+	for (iter = tracks.next; iter; iter = iter->next, index++) {
 		track = UPCAST(iter, struct track);
 
-		if (sel && index == track_index && track == player->track)
+		if (index < track_nav.wmin) continue;
+		if (index >= track_nav.wmax) break;
+
+		if (sel && index == track_nav.sel && track == player->track)
 			style_on(pane->win, STYLE_ITEM_HOVER_SEL);
-		else if (sel && index == track_index)
+		else if (sel && index == track_nav.sel)
 			style_on(pane->win, STYLE_ITEM_HOVER);
 		else if (track == player->track)
 			style_on(pane->win, STYLE_ITEM_SEL);
 
-		wmove(pane->win, 1 + index, 0);
+		wmove(pane->win, 1 + index - track_nav.wmin, 0);
 		wprintw(pane->win, "%-*.*s", pane->w, pane->w, track->name);
 
-		if (sel && index == track_index && track == player->track)
+		if (sel && index == track_nav.sel && track == player->track)
 			style_off(pane->win, STYLE_ITEM_HOVER_SEL);
-		else if (sel && index == track_index)
+		else if (sel && index == track_nav.sel)
 			style_off(pane->win, STYLE_ITEM_HOVER);
 		else if (track == player->track)
 			style_off(pane->win, STYLE_ITEM_SEL);
-
-		index++;
 	}
 }
 
@@ -539,7 +562,7 @@ cmd_input(wint_t c)
 	switch (c) {
 	case KEY_ESC:
 		if (history->cmd == history->query) {
-			pane_sel = NULL; /* TODO: save last and switch back */
+			pane_sel = pane_top_sel;
 		} else {
 			history->cmd = history->query;
 		}
@@ -554,7 +577,6 @@ cmd_input(wint_t c)
 		inputln_del(history->cmd, history->cmd->cur);
 		break;
 	case KEY_UP:
-		// TODO: show visually that no more matches
 		history_next(history);
 		break;
 	case KEY_DOWN:
@@ -563,7 +585,7 @@ cmd_input(wint_t c)
 	case KEY_ENTER:
 		history_submit(history);
 		if (!*history->cmd->buf)
-			pane_sel = NULL;
+			pane_sel = pane_top_sel;
 		break;
 	case KEY_TAB:
 		break;
@@ -636,15 +658,22 @@ main_input(wint_t c)
 			pane_sel = &pane_right;
 		else
 			pane_sel = &pane_left;
+		pane_top_sel = pane_sel;
 		break;
 	case KEY_ESC:
-		pane_sel = NULL;
+		pane_sel = pane_top_sel;
 		break;
 	case KEY_LEFT:
-		pane_sel = &pane_left;
+		if (player->track)
+			player_seek(MAX(player->time_pos - 10, 0));
 		break;
 	case KEY_RIGHT:
-		pane_sel = &pane_right;
+		if (player->track) {
+			if (player->time_end > player->time_pos + 10)
+				player_seek(player->time_pos + 10);
+			else
+				player_next();
+		}
 		break;
 	case 't':
 		player_toggle_pause();

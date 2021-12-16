@@ -125,6 +125,7 @@ player_play_track(struct track *track)
 	player_clear_msg();
 	player->track = track;
 	mpd_run_stop(player->conn);
+	mpd_run_clear(player->conn);
 
 	if (!mpd_run_add(player->conn, player->track->fpath)
 			|| !mpd_run_play(player->conn)) {
@@ -193,7 +194,11 @@ player_prev(void)
 int
 player_seek(int sec)
 {
-	/* TODO */
+	if (!mpd_run_seek_current(player->conn, sec, false)) {
+		PLAYER_STATUS(PLAYER_MSG_ERR, "Track seek failed");
+		return PLAYER_ERR;
+	}
+
 	return PLAYER_OK;
 }
 

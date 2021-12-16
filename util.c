@@ -42,7 +42,7 @@ assert(int cond, const char *file, int line, const char *condstr)
 {
 	if (cond) return;
 
-	fprintf(stderr, "Assertion failed %s:%i (%s)", file, line, condstr);
+	fprintf(stderr, "Assertion failed %s:%i (%s)\n", file, line, condstr);
 	exit(1);
 }
 
