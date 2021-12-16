@@ -35,6 +35,8 @@ player_init(void)
 	player->track = NULL;
 	player->state = PLAYER_STATE_PAUSED;
 
+	player->seek_delay = 0;
+
 	player->volume = 0;
 	player->time_pos = 0;
 	player->time_end = 0;
@@ -79,6 +81,12 @@ player_update(void)
 		ASSERT(0);
 	}
 	player->volume = mpd_status_get_volume(status);
+
+	if (player->seek_delay) {
+		player->seek_delay -= 1;
+		if (!player->seek_delay)
+			player_play();
+	} 
 
 	song = mpd_run_current_song(player->conn);
 	if (song) {
@@ -181,6 +189,8 @@ player_resume(void)
 int
 player_next(void)
 {
+	if (!player->loaded) return PLAYER_ERR;
+
 	if (!mpd_run_next(player->conn)) {
 		PLAYER_STATUS(PLAYER_MSG_ERR, "Playing next track failed");
 		mpd_run_clearerror(player->conn);
@@ -193,8 +203,23 @@ player_next(void)
 int
 player_prev(void)
 {
+	/* TODO prevent mpd from dying on error, how to use properly */
+	if (!player->loaded) return PLAYER_ERR;
+
 	if (!mpd_run_previous(player->conn)) {
 		PLAYER_STATUS(PLAYER_MSG_ERR, "Playing prev track failed");
+		mpd_run_clearerror(player->conn);
+		return PLAYER_ERR;
+	}
+
+	return PLAYER_OK;
+}
+
+int
+player_play(void)
+{
+	if (!mpd_run_play(player->conn)) {
+		PLAYER_STATUS(PLAYER_MSG_ERR, "Playing track failed");
 		mpd_run_clearerror(player->conn);
 		return PLAYER_ERR;
 	}
@@ -217,8 +242,8 @@ player_stop(void)
 int
 player_seek(int sec)
 {
-	if (player->state == PLAYER_STATE_STOPPED) {
-		PLAYER_STATUS(PLAYER_MSG_ERR, "Cannot seek stopped track");
+	if (!player->loaded || player->state == PLAYER_STATE_STOPPED) {
+		PLAYER_STATUS(PLAYER_MSG_ERR, "No track loaded");
 		return PLAYER_ERR;
 	}
 
@@ -227,6 +252,9 @@ player_seek(int sec)
 		mpd_run_clearerror(player->conn);
 		return PLAYER_ERR;
 	}
+
+	player->seek_delay = 8;
+	player_pause();
 
 	return PLAYER_OK;
 }

@@ -32,6 +32,8 @@ struct player {
 	struct track *track;
 	int state;
 
+	int seek_delay;
+
 	int loaded;
 	int volume;
 	unsigned int time_pos, time_end;
@@ -56,6 +58,7 @@ int player_resume(void);
 int player_prev(void);
 int player_next(void);
 int player_seek(int sec);
+int player_play(void);
 int player_stop(void);
 
 int player_set_volume(unsigned int vol);

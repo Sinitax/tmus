@@ -157,9 +157,10 @@ inputln_addch(struct inputln *line, wchar_t c)
 {
 	int i;
 
-	if (line->len + 1 == line->cap) {
+	if (line->len + 1 >= line->cap) {
 		line->cap *= 2;
-		line->buf = realloc(line->buf, line->cap);
+		line->buf = realloc(line->buf,
+			line->cap * sizeof(wchar_t));
 	}
 
 	for (i = line->len; i > line->cur; i--)

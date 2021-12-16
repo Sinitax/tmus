@@ -54,7 +54,7 @@ struct pane;
 
 typedef int (*pane_handler)(wint_t c);
 typedef void (*pane_updater)(struct pane *pane, int sel);
-typedef wchar_t *(*completion_generator)(const wchar_t *text, int state);
+typedef wchar_t *(*completion_generator)(const wchar_t *text, int fwd, int state);
 typedef int (*cmd_handler)(const char *args);
 
 struct pane {
@@ -131,8 +131,8 @@ void style_init(int style, int fg, int bg, int attr);
 void style_on(WINDOW *win, int style);
 void style_off(WINDOW *win, int style);
 
-wchar_t *command_name_generator(const wchar_t *text, int state);
-wchar_t *track_name_generator(const wchar_t *text, int state);
+wchar_t *command_name_generator(const wchar_t *text, int fwd, int state);
+wchar_t *track_name_generator(const wchar_t *text, int fwd, int state);
 
 int tag_input(wint_t c);
 void tag_vis(struct pane *pane, int sel);
@@ -157,6 +157,7 @@ init(void)
 {
 	quit = 0;
 
+	/* TODO handle as character intead of signal */
 	signal(SIGINT, exit);
 	atexit(cleanup);
 
@@ -198,6 +199,7 @@ init(void)
 
 	playlist = LIST_HEAD;
 	tags_sel = LIST_HEAD;
+
 	listnav_init(&tag_nav);
 	listnav_init(&track_nav);
 }
@@ -372,56 +374,84 @@ style_off(WINDOW *win, int style)
 }
 
 wchar_t *
-command_name_generator(const wchar_t *text, int reset)
+command_name_generator(const wchar_t *text, int fwd, int reset)
 {
 	static int index, len;
+	int dir;
+
+	dir = fwd ? 1 : -1;
 
 	if (reset) {
 		index = 0;
 		len = wcslen(text);
-	} else {
-		index++;
+	} else if (index >= -1 && index <= ARRLEN(cmds)) {
+		index += dir;
 	}
 
-	for (; index < ARRLEN(cmds); index++) {
+	while (index >= 0 && index < ARRLEN(cmds)) {
 		if (!wcsncmp(cmds[index].name, text, len))
 			return wcsdup(cmds[index].name);
+		index += dir;
 	}
 
 	return NULL;
 }
 
 wchar_t *
-track_name_generator(const wchar_t *text, int reset)
+track_name_generator(const wchar_t *text, int fwd, int reset)
 {
 	static struct link *cur;
 	struct track *track;
-	static int len;
 
 	if (reset) {
 		cur = tracks.next;
-		len = wcslen(text);
 	} else if (cur) {
-		cur = cur->next;
+		cur = fwd ? cur->next : cur->prev;
 	}
 
-	for (; cur; cur = cur->next) {
+	while (cur != &tracks && cur) {
 		track = UPCAST(cur, struct track);
-		if (!wcsncmp(track->name, text, len))
+		if (wcsstr(track->name, text))
 			return wcsdup(track->name);
+		cur = fwd ? cur->next : cur->prev;
 	}
 
 	return NULL;
 }
 
-int
-tag_input(wint_t c)
+void
+select_current_tag(void)
 {
-	struct link *tag_link, *iter;
+	struct link *link, *iter;
 	struct track *track;
 	struct tag *tag;
 	struct ref *ref;
 
+	link = link_iter(tags.next, tag_nav.sel);
+	ASSERT(link != NULL);
+	tag = UPCAST(link, struct tag);
+	if (refs_incl(&tags_sel, tag)) {
+		refs_rm(&tags_sel, tag);
+	} else {
+		ref = ref_init(tag);
+		list_push_back(&tags_sel, LINK(ref));
+	}
+	refs_free(&playlist);
+	for (link = tags_sel.next; link; link = link->next) {
+		tag = UPCAST(link, struct ref)->data;
+		for (iter = tracks.next; iter; iter = iter->next) {
+			track = UPCAST(iter, struct track);
+			if (refs_incl(&track->tags, tag) && !refs_incl(&playlist, track)) {
+				ref = ref_init(track);
+				list_push_back(&playlist, LINK(ref));
+			}
+		}
+	}
+}
+
+int
+tag_input(wint_t c)
+{
 	switch (c) {
 	case KEY_UP:
 		listnav_update_sel(&tag_nav, tag_nav.sel - 1);
@@ -430,26 +460,7 @@ tag_input(wint_t c)
 		listnav_update_sel(&tag_nav, tag_nav.sel + 1);
 		return 1;
 	case KEY_SPACE:
-		tag_link = link_iter(tags.next, tag_nav.sel);
-		ASSERT(tag_link != NULL);
-		tag = UPCAST(tag_link, struct tag);
-		if (refs_incl(&tags_sel, tag)) {
-			refs_rm(&tags_sel, tag);
-		} else {
-			ref = ref_init(tag);
-			list_push_back(&tags_sel, LINK(ref));
-		}
-		refs_free(&playlist);
-		for (tag_link = tags_sel.next; tag_link; tag_link = tag_link->next) {
-			tag = UPCAST(tag_link, struct ref)->data;
-			for (iter = tracks.next; iter; iter = iter->next) {
-				track = UPCAST(iter, struct track);
-				if (refs_incl(&track->tags, tag) && !refs_incl(&playlist, track)) {
-					ref = ref_init(track);
-					list_push_back(&playlist, LINK(ref));
-				}
-			}
-		}
+		select_current_tag();
 		return 1;
 	case KEY_NPAGE:
 		listnav_update_sel(&track_nav, track_nav.sel - track_nav.wlen / 2);
@@ -521,10 +532,10 @@ track_input(wint_t c)
 		player_play_track(track);
 		return 1;
 	case KEY_PPAGE:
-		listnav_update_sel(&track_nav, track_nav.sel - track_nav.wlen / 2);
+		listnav_update_sel(&track_nav, track_nav.sel + track_nav.wlen / 2);
 		return 1;
 	case KEY_NPAGE:
-		listnav_update_sel(&track_nav, track_nav.sel + track_nav.wlen / 2);
+		listnav_update_sel(&track_nav, track_nav.sel - track_nav.wlen / 2);
 		return 1;
 	}
 
@@ -573,11 +584,30 @@ track_vis(struct pane *pane, int sel)
 	}
 }
 
-int
-cmd_input(wint_t c)
+void
+run_cmd(const wchar_t *query)
+{
+
+}
+
+void
+play_track(const wchar_t *query)
 {
 	struct track *track;
 	struct link *iter;
+
+	for (iter = tracks.next; iter; iter = iter->next) {
+		track = UPCAST(iter, struct track);
+		if (wcsstr(track->name, history->cmd->buf)) {
+			player_play_track(track);
+			break;
+		}
+	}
+}
+
+int
+cmd_input(wint_t c)
+{
 	wchar_t *res;
 
 	if (cmd_mode == IMODE_EXECUTE) {
@@ -616,30 +646,28 @@ cmd_input(wint_t c)
 			pane_sel = pane_top_sel;
 			break;
 		}
+
 		if (cmd_mode == IMODE_EXECUTE) {
-			
-		} else {
-			for (iter = tracks.next; iter; iter = iter->next) {
-				track = UPCAST(iter, struct track);
-				if (!wcscmp(track->name, history->cmd->buf)) {
-					player_play_track(track);
-					break;
-				}
-			}
+			run_cmd(history->cmd->buf);
+		} else if (cmd_mode == IMODE_SEARCH) {
+			play_track(history->cmd->buf);
 		}
+
 		history_submit(history);
 		pane_sel = pane_top_sel;
 		break;
 	case KEY_TAB:
+	case KEY_BTAB:
 		if (history->cmd != history->query) {
 			inputln_copy(history->query, history->cmd);
 			history->cmd = history->query;
 		}
 
-		if (completion_reset)
+		if (completion_reset) {
 			inputln_copy(&completion_query, history->query);
+		}
 
-		res = completion(completion_query.buf, completion_reset);
+		res = completion(completion_query.buf, c == KEY_TAB, completion_reset);
 		if (res) inputln_replace(history->query, res);
 		free(res);
 
@@ -709,8 +737,7 @@ cmd_vis(struct pane *pane, int sel)
 			for (iter = history->list.next; iter; iter = iter->next, index++)
 				if (UPCAST(iter, struct inputln) == cmd)
 					break;
-			line = appendstrf(NULL, "[%i]%c ", iter ? index : -1,
-				cmd_mode == IMODE_SEARCH ? '/' : ':');
+			line = appendstrf(NULL, "[%i] ", iter ? index : -1);
 		} else {
 			line = appendstrf(NULL, "%c", cmd_mode == IMODE_SEARCH ? '/' : ':');
 		}
@@ -747,14 +774,14 @@ main_input(wint_t c)
 		break;
 	case KEY_RIGHT:
 		if (player->track) {
-			if (player->time_end > player->time_pos + 10)
+			if (player->time_end > player->time_pos + 10) {
 				player_seek(player->time_pos + 10);
-			else
+			} else {
 				player_next();
+			}
 		}
 		break;
-	case L't':
-	case L' ':
+	case L'c':
 		player_toggle_pause();
 		break;
 	case L'n':
@@ -769,7 +796,11 @@ main_input(wint_t c)
 		player_seek(0);
 		break;
 	case L's':
-		player_stop();
+		if (player->state == PLAYER_STATE_PLAYING) {
+			player_stop();
+		} else {
+			player_play();
+		}
 		break;
 	case L':':
 		cmd_mode = IMODE_EXECUTE;
