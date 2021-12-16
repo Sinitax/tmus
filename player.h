@@ -1,6 +1,7 @@
 #pragma once
 
 #include "track.h"
+#include "list.h"
 #include "util.h"
 
 #include "mpd/client.h"
@@ -20,7 +21,8 @@ enum {
 
 enum {
 	PLAYER_STATE_PAUSED,
-	PLAYER_STATE_PLAYING
+	PLAYER_STATE_PLAYING,
+	PLAYER_STATE_STOPPED
 };
 
 struct player {
@@ -30,6 +32,7 @@ struct player {
 	struct track *track;
 	int state;
 
+	int loaded;
 	int volume;
 	unsigned int time_pos, time_end;
 
@@ -53,6 +56,7 @@ int player_resume(void);
 int player_prev(void);
 int player_next(void);
 int player_seek(int sec);
+int player_stop(void);
 
 int player_set_volume(unsigned int vol);
 

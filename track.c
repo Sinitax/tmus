@@ -1,5 +1,6 @@
 #include "track.h"
 
+#include <wchar.h>
 #include <string.h>
 
 
@@ -15,14 +16,10 @@ track_init(const char *dir, const char *file)
 	ASSERT(track->fname != NULL);
 	track->fpath = aprintf("%s/%s", dir, file);
 	ASSERT(track->fpath != NULL);
-	track->name = sanitized(track->fname);
-	ASSERT(track->name != NULL);
+	track->name = calloc(strlen(track->fname) + 1, sizeof(wchar_t));
+	mbstowcs(track->name, track->fname, strlen(track->fname) + 1);
 
-	// TODO track_load_info(track)
-	track->artist = NULL;
-	track->duration = 0;
 	track->link = LINK_EMPTY;
-
 	track->tags = LIST_HEAD;
 
 	return track;

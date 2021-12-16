@@ -1,4 +1,5 @@
 #include "player.h"
+#include "ref.h"
 
 #include "portaudio.h"
 #include "sndfile.h"
@@ -64,16 +65,30 @@ player_update(void)
 	status = mpd_run_status(player->conn);
 	ASSERT(status != NULL);
 
-	player->state = mpd_status_get_state(status) == MPD_STATE_PLAY
-		? PLAYER_STATE_PLAYING : PLAYER_STATE_PAUSED;
+	switch (mpd_status_get_state(status)) {
+	case MPD_STATE_PAUSE:
+		player->state = PLAYER_STATE_PAUSED;
+		break;
+	case MPD_STATE_PLAY:
+		player->state = PLAYER_STATE_PLAYING;
+		break;
+	case MPD_STATE_STOP:
+		player->state = PLAYER_STATE_STOPPED;
+		break;
+	default:
+		ASSERT(0);
+	}
 	player->volume = mpd_status_get_volume(status);
 
 	song = mpd_run_current_song(player->conn);
 	if (song) {
+		player->loaded = true;
 		player->time_pos = mpd_status_get_elapsed_time(status);
 		player->time_end = mpd_song_get_duration(song);
 		mpd_song_free(song);
 	} else {
+		player->track = NULL;
+		player->loaded = false;
 		player->time_pos = 0;
 		player->time_end = 0;
 	}
@@ -84,15 +99,12 @@ player_update(void)
 void
 player_queue_clear(void)
 {
-	struct link *iter, *next;;
+	struct ref *ref;
 
-	for (iter = &player->queue; iter; ) {
-		next = iter->next;
-		free(UPCAST(iter, struct track_ref));
-		iter = next;
+	while (player->queue.next) {
+		ref = UPCAST(link_pop(player->queue.next), struct ref);
+		ref_free(ref);
 	}
-
-	player->queue = LIST_HEAD;
 }
 
 void
@@ -104,19 +116,12 @@ player_queue_append(struct track *track)
 void
 player_queue_insert(struct track *track, size_t pos)
 {
-	struct track_ref *new;
-	struct link *iter;
-	int i;
+	struct ref *ref;
+	struct link *link;
 
-	new = malloc(sizeof(struct track_ref));
-	new->track = track;
-	new->link = LINK_EMPTY;
-
-	iter = &player->queue;
-	for (i = 0; i < pos && iter->next; i++)
-		iter = iter->next;
-
-	link_append(iter, &new->link);
+	ref = ref_init(track);
+	link = link_iter(&player->queue, pos);
+	link_append(link, &ref->link);
 }
 
 int
@@ -130,6 +135,7 @@ player_play_track(struct track *track)
 	if (!mpd_run_add(player->conn, player->track->fpath)
 			|| !mpd_run_play(player->conn)) {
 		PLAYER_STATUS(PLAYER_MSG_ERR, "Playback failed");
+		mpd_run_clearerror(player->conn);
 		return PLAYER_ERR;
 	}
 
@@ -141,6 +147,7 @@ player_toggle_pause(void)
 {
 	if (!mpd_run_toggle_pause(player->conn)) {
 		PLAYER_STATUS(PLAYER_MSG_ERR, "Pause toggle failed");
+		mpd_run_clearerror(player->conn);
 		return PLAYER_ERR;
 	}
 
@@ -152,6 +159,7 @@ player_pause(void)
 {
 	if (!mpd_run_pause(player->conn, true)) {
 		PLAYER_STATUS(PLAYER_MSG_ERR, "Pausing track failed");
+		mpd_run_clearerror(player->conn);
 		return PLAYER_ERR;
 	}
 
@@ -163,6 +171,7 @@ player_resume(void)
 {
 	if (!mpd_run_pause(player->conn, false)) {
 		PLAYER_STATUS(PLAYER_MSG_ERR, "Resuming track failed");
+		mpd_run_clearerror(player->conn);
 		return PLAYER_ERR;
 	}
 
@@ -174,6 +183,7 @@ player_next(void)
 {
 	if (!mpd_run_next(player->conn)) {
 		PLAYER_STATUS(PLAYER_MSG_ERR, "Playing next track failed");
+		mpd_run_clearerror(player->conn);
 		return PLAYER_ERR;
 	}
 
@@ -185,6 +195,19 @@ player_prev(void)
 {
 	if (!mpd_run_previous(player->conn)) {
 		PLAYER_STATUS(PLAYER_MSG_ERR, "Playing prev track failed");
+		mpd_run_clearerror(player->conn);
+		return PLAYER_ERR;
+	}
+
+	return PLAYER_OK;
+}
+
+int
+player_stop(void)
+{
+	if (!mpd_run_stop(player->conn)) {
+		PLAYER_STATUS(PLAYER_MSG_ERR, "Stopping track failed");
+		mpd_run_clearerror(player->conn);
 		return PLAYER_ERR;
 	}
 
@@ -194,8 +217,14 @@ player_prev(void)
 int
 player_seek(int sec)
 {
+	if (player->state == PLAYER_STATE_STOPPED) {
+		PLAYER_STATUS(PLAYER_MSG_ERR, "Cannot seek stopped track");
+		return PLAYER_ERR;
+	}
+
 	if (!mpd_run_seek_current(player->conn, sec, false)) {
 		PLAYER_STATUS(PLAYER_MSG_ERR, "Track seek failed");
+		mpd_run_clearerror(player->conn);
 		return PLAYER_ERR;
 	}
 
@@ -207,11 +236,13 @@ player_set_volume(unsigned int vol)
 {
 	if (player->volume == -1) {
 		PLAYER_STATUS(PLAYER_MSG_INFO, "Setting volume not supported");
+		mpd_run_clearerror(player->conn);
 		return PLAYER_ERR;
 	}
 
 	if (!mpd_run_set_volume(player->conn, vol)) {
 		PLAYER_STATUS(PLAYER_MSG_ERR, "Setting volume failed");
+		mpd_run_clearerror(player->conn);
 		return PLAYER_ERR;
 	}
 

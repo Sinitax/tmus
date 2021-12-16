@@ -1,5 +1,4 @@
 #include "history.h"
-#include "link.h"
 #include "util.h"
 
 #include <string.h>
@@ -45,7 +44,6 @@ history_free(struct history *history)
 		free(ln);
 	}
 	history->list = LIST_HEAD;
-	free(history->query);
 	history->query = NULL;
 	history->cmd = NULL;
 }
@@ -170,6 +168,8 @@ inputln_addch(struct inputln *line, wchar_t c)
 
 	line->len++;
 	line->cur++;
+
+	line->buf[line->len] = '\0';
 }
 
 void
@@ -188,4 +188,28 @@ inputln_del(struct inputln *line, int n)
 
 	line->len -= n;
 	line->cur -= n;
+}
+
+void
+inputln_copy(struct inputln *dst, struct inputln *src)
+{
+	if (dst->buf) {
+		free(dst->buf);
+		dst->buf = NULL;
+	}
+	dst->len = src->len;
+	dst->buf = wcsdup(src->buf);
+	ASSERT(dst->buf != NULL);
+	dst->cap = src->len + 1;
+	dst->cur = dst->len;
+}
+
+void
+inputln_replace(struct inputln *line, const wchar_t *str)
+{
+	line->buf = wcsdup(str);
+	ASSERT(line->buf != NULL);
+	line->len = wcslen(str);
+	line->cap = line->len + 1;
+	line->cur = line->len;
 }

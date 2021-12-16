@@ -11,7 +11,7 @@ clean:
 %.o: %.c %.h
 	$(CC) -c -o $@ $< $(CFLAGS) $(LDLIBS)
 
-tmus: main.c util.o history.o link.o player.o tag.o track.o listnav.o
+tmus: main.c util.o history.o list.o player.o tag.o track.o listnav.o ref.o
 	$(CC) -o $@ $^ $(CFLAGS) $(LDLIBS)
 
 install:

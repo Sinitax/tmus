@@ -2,6 +2,8 @@
 
 #include "util.h"
 
+#include "ncurses.h"
+
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,6 +44,7 @@ assert(int cond, const char *file, int line, const char *condstr)
 {
 	if (cond) return;
 
+	endwin();
 	fprintf(stderr, "Assertion failed %s:%i (%s)\n", file, line, condstr);
 	exit(1);
 }

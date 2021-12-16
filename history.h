@@ -1,6 +1,6 @@
 #pragma once 
 
-#include "link.h"
+#include "list.h"
 
 #include "wchar.h"
 
@@ -38,3 +38,6 @@ void inputln_right(struct inputln *line);
 
 void inputln_addch(struct inputln *line, wchar_t c);
 void inputln_del(struct inputln *line, int n);
+
+void inputln_copy(struct inputln *dst, struct inputln *src);
+void inputln_replace(struct inputln *line, const wchar_t *str);

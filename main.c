@@ -2,12 +2,13 @@
 #define _DEFAULT_SOURCE
 
 #include "util.h"
-#include "link.h"
+#include "list.h"
 #include "history.h"
 #include "tag.h"
 #include "track.h"
 #include "player.h"
 #include "listnav.h"
+#include "ref.h"
 
 #include "mpd/player.h"
 #include "curses.h"
@@ -53,7 +54,7 @@ struct pane;
 
 typedef int (*pane_handler)(wint_t c);
 typedef void (*pane_updater)(struct pane *pane, int sel);
-typedef char *(*completion_generator)(const char *text, int state);
+typedef wchar_t *(*completion_generator)(const wchar_t *text, int state);
 typedef int (*cmd_handler)(const char *args);
 
 struct pane {
@@ -67,7 +68,7 @@ struct pane {
 };
 
 struct cmd {
-	const char *name;
+	const wchar_t *name;
 	cmd_handler func;
 };
 
@@ -85,11 +86,20 @@ struct pane *const panes[] = {
 	&pane_bot
 };
 
+struct inputln completion_query = { 0 };
+int completion_reset = 1;
 completion_generator completion;
+
 struct pane *cmd_pane;
 struct history search_history, command_history;
 struct history *history;
 int cmd_show, cmd_mode;
+
+const char player_state_chars[] = {
+	[PLAYER_STATE_PAUSED] = '|',
+	[PLAYER_STATE_PLAYING] = '>',
+	[PLAYER_STATE_STOPPED] = '#'
+};
 
 struct pane *tag_pane;
 struct listnav tag_nav;
@@ -121,8 +131,8 @@ void style_init(int style, int fg, int bg, int attr);
 void style_on(WINDOW *win, int style);
 void style_off(WINDOW *win, int style);
 
-char *command_name_generator(const char *text, int state);
-char *track_name_generator(const char *text, int state);
+wchar_t *command_name_generator(const wchar_t *text, int state);
+wchar_t *track_name_generator(const wchar_t *text, int state);
 
 int tag_input(wint_t c);
 void tag_vis(struct pane *pane, int sel);
@@ -139,7 +149,7 @@ void main_vis(void);
 int usercmd_save(const char *args);
 
 const struct cmd cmds[] = {
-	{ "save", usercmd_save },
+	{ L"save", usercmd_save },
 };
 
 void
@@ -186,6 +196,7 @@ init(void)
 	pane_sel = &pane_left;
 	pane_top_sel = pane_sel;
 
+	playlist = LIST_HEAD;
 	tags_sel = LIST_HEAD;
 	listnav_init(&tag_nav);
 	listnav_init(&track_nav);
@@ -194,17 +205,17 @@ init(void)
 void
 cleanup(void)
 {
+	delwin(pane_left.win);
+	delwin(pane_right.win);
+	delwin(pane_bot.win);
+	endwin();
+
 	data_save();
 
 	player_free();
 
 	history_free(&search_history);
 	history_free(&command_history);
-
-	delwin(pane_left.win);
-	delwin(pane_right.win);
-	delwin(pane_bot.win);
-	endwin();
 }
 
 void
@@ -235,7 +246,7 @@ data_load(void)
 		tag->name = sanitized(tag->fname);
 		ASSERT(tag->name != NULL);
 		tag->link = LINK_EMPTY;
-		link_push_back(&tags, &tag->link);
+		list_push_back(&tags, LINK(tag));
 
 		tracks_load(tag);
 	}
@@ -247,7 +258,7 @@ tracks_load(struct tag *tag)
 {
 	struct dirent *ent;
 	struct track *track;
-	struct tag_ref *tagref;
+	struct ref *ref;
 	DIR *dir;
 
 	dir = opendir(tag->fpath);
@@ -261,13 +272,9 @@ tracks_load(struct tag *tag)
 			continue;
 
 		track = track_init(tag->fpath, ent->d_name);
-		tagref = malloc(sizeof(struct tag_ref));
-		ASSERT(tagref != NULL);
-		tagref->tag = tag;
-		tagref->link = LINK_EMPTY;
-		link_push_back(&track->tags, &tagref->link);
-
-		link_push_back(&tracks, &track->link);
+		ref = ref_init(tag);
+		list_push_back(&track->tags, LINK(ref));
+		list_push_back(&tracks, LINK(track));
 	}
 	closedir(dir);
 }
@@ -364,26 +371,28 @@ style_off(WINDOW *win, int style)
 	ATTR_OFF(win, COLOR_PAIR(style) | style_attrs[style]);
 }
 
-char *
-command_name_generator(const char *text, int reset)
+wchar_t *
+command_name_generator(const wchar_t *text, int reset)
 {
 	static int index, len;
 
 	if (reset) {
 		index = 0;
-		len = strlen(text);
+		len = wcslen(text);
+	} else {
+		index++;
 	}
 
 	for (; index < ARRLEN(cmds); index++) {
-		if (!strncmp(cmds[index].name, text, len))
-			return strdup(cmds[index].name);
+		if (!wcsncmp(cmds[index].name, text, len))
+			return wcsdup(cmds[index].name);
 	}
 
 	return NULL;
 }
 
-char *
-track_name_generator(const char *text, int reset)
+wchar_t *
+track_name_generator(const wchar_t *text, int reset)
 {
 	static struct link *cur;
 	struct track *track;
@@ -391,13 +400,15 @@ track_name_generator(const char *text, int reset)
 
 	if (reset) {
 		cur = tracks.next;
-		len = strlen(text);
+		len = wcslen(text);
+	} else if (cur) {
+		cur = cur->next;
 	}
 
 	for (; cur; cur = cur->next) {
 		track = UPCAST(cur, struct track);
-		if (!strncmp(track->name, text, len))
-			return strdup(track->name);
+		if (!wcsncmp(track->name, text, len))
+			return wcsdup(track->name);
 	}
 
 	return NULL;
@@ -406,8 +417,10 @@ track_name_generator(const char *text, int reset)
 int
 tag_input(wint_t c)
 {
-	struct link *cur;
+	struct link *tag_link, *iter;
+	struct track *track;
 	struct tag *tag;
+	struct ref *ref;
 
 	switch (c) {
 	case KEY_UP:
@@ -417,13 +430,25 @@ tag_input(wint_t c)
 		listnav_update_sel(&tag_nav, tag_nav.sel + 1);
 		return 1;
 	case KEY_SPACE:
-		cur = link_iter(tags.next, tag_nav.sel);
-		ASSERT(cur != NULL);
-		tag = UPCAST(cur, struct tag);
-		if (tagrefs_incl(&tags_sel, tag)) {
-			tagrefs_rm(&tags_sel, tag);
+		tag_link = link_iter(tags.next, tag_nav.sel);
+		ASSERT(tag_link != NULL);
+		tag = UPCAST(tag_link, struct tag);
+		if (refs_incl(&tags_sel, tag)) {
+			refs_rm(&tags_sel, tag);
 		} else {
-			tagrefs_add(&tags_sel, tag);
+			ref = ref_init(tag);
+			list_push_back(&tags_sel, LINK(ref));
+		}
+		refs_free(&playlist);
+		for (tag_link = tags_sel.next; tag_link; tag_link = tag_link->next) {
+			tag = UPCAST(tag_link, struct ref)->data;
+			for (iter = tracks.next; iter; iter = iter->next) {
+				track = UPCAST(iter, struct track);
+				if (refs_incl(&track->tags, tag) && !refs_incl(&playlist, track)) {
+					ref = ref_init(track);
+					list_push_back(&playlist, LINK(ref));
+				}
+			}
 		}
 		return 1;
 	case KEY_NPAGE:
@@ -453,7 +478,7 @@ tag_vis(struct pane *pane, int sel)
 	index = 0;
 	for (iter = tags.next; iter; iter = iter->next) {
 		tag = UPCAST(iter, struct tag);
-		tsel = tagrefs_incl(&tags_sel, tag);
+		tsel = refs_incl(&tags_sel, tag);
 
 		if (sel && index == tag_nav.sel && tsel)
 			style_on(pane->win, STYLE_ITEM_HOVER_SEL);
@@ -495,10 +520,10 @@ track_input(wint_t c)
 		player->track = track;
 		player_play_track(track);
 		return 1;
-	case KEY_NPAGE:
+	case KEY_PPAGE:
 		listnav_update_sel(&track_nav, track_nav.sel - track_nav.wlen / 2);
 		return 1;
-	case KEY_PPAGE:
+	case KEY_NPAGE:
 		listnav_update_sel(&track_nav, track_nav.sel + track_nav.wlen / 2);
 		return 1;
 	}
@@ -516,15 +541,15 @@ track_vis(struct pane *pane, int sel)
 	werase(pane->win);
 	pane_title(pane, "Tracks", sel);
 
-	listnav_update_bounds(&track_nav, 0, list_len(&tracks));
+	listnav_update_bounds(&track_nav, 0, list_len(&playlist));
 	listnav_update_wlen(&track_nav, pane->h - 1);
 
-	wmove(pane->win, 0, 45);
-	wprintw(pane->win, "%i %i", list_len(&tracks), track_nav.sel);
+	wmove(pane->win, 0, 50);
+	wprintw(pane->win, "%i", list_len(&playlist));
 
 	index = 0;
-	for (iter = tracks.next; iter; iter = iter->next, index++) {
-		track = UPCAST(iter, struct track);
+	for (iter = playlist.next; iter; iter = iter->next, index++) {
+		track = UPCAST(iter, struct ref)->data;
 
 		if (index < track_nav.wmin) continue;
 		if (index >= track_nav.wmax) break;
@@ -537,7 +562,7 @@ track_vis(struct pane *pane, int sel)
 			style_on(pane->win, STYLE_ITEM_SEL);
 
 		wmove(pane->win, 1 + index - track_nav.wmin, 0);
-		wprintw(pane->win, "%-*.*s", pane->w, pane->w, track->name);
+		wprintw(pane->win, "%-*.*ls", pane->w, pane->w, track->name);
 
 		if (sel && index == track_nav.sel && track == player->track)
 			style_off(pane->win, STYLE_ITEM_HOVER_SEL);
@@ -551,10 +576,14 @@ track_vis(struct pane *pane, int sel)
 int
 cmd_input(wint_t c)
 {
+	struct track *track;
+	struct link *iter;
+	wchar_t *res;
+
 	if (cmd_mode == IMODE_EXECUTE) {
 		history = &command_history;
 		completion = command_name_generator;
-	} else {
+	} else if (cmd_mode == IMODE_SEARCH) {
 		history = &search_history;
 		completion = track_name_generator;
 	}
@@ -583,18 +612,51 @@ cmd_input(wint_t c)
 		history_prev(history);
 		break;
 	case KEY_ENTER:
-		history_submit(history);
-		if (!*history->cmd->buf)
+		if (!*history->cmd->buf) {
 			pane_sel = pane_top_sel;
+			break;
+		}
+		if (cmd_mode == IMODE_EXECUTE) {
+			
+		} else {
+			for (iter = tracks.next; iter; iter = iter->next) {
+				track = UPCAST(iter, struct track);
+				if (!wcscmp(track->name, history->cmd->buf)) {
+					player_play_track(track);
+					break;
+				}
+			}
+		}
+		history_submit(history);
+		pane_sel = pane_top_sel;
 		break;
 	case KEY_TAB:
+		if (history->cmd != history->query) {
+			inputln_copy(history->query, history->cmd);
+			history->cmd = history->query;
+		}
+
+		if (completion_reset)
+			inputln_copy(&completion_query, history->query);
+
+		res = completion(completion_query.buf, completion_reset);
+		if (res) inputln_replace(history->query, res);
+		free(res);
+
+		completion_reset = 0;
 		break;
 	case KEY_BACKSPACE:
+		if (history->cmd->cur == 0) {
+			pane_sel = pane_top_sel;
+			break;
+		}
 		inputln_del(history->cmd, 1);
+		completion_reset = 1;
 		break;
 	default:
 		if (!iswprint(c)) return 0;
 		inputln_addch(history->cmd, c);
+		completion_reset = 1;
 		break;
 	}
 	return 1;
@@ -604,28 +666,26 @@ void
 cmd_vis(struct pane *pane, int sel)
 {
 	struct inputln *cmd;
-	char state_char;
+	struct link *iter;
+	int index, offset;
 	char *line;
 
 	werase(pane->win);
 
 	wmove(pane->win, 0, 0);
 	style_on(pane->win, STYLE_TITLE);
-	wprintw(pane->win, " %-*.*s\n", pane->w - 1, pane->w - 1,
-		player->track ? player->track->name : "");
+	wprintw(pane->win, " %-*.*ls\n", pane->w - 1, pane->w - 1,
+		player->track ? player->track->name : L"");
 	style_off(pane->win, STYLE_TITLE);
 
-	if (player->time_pos) {
-		state_char = player->state == PLAYER_STATE_PLAYING ? '>' : '|';
-		line = appendstrf(NULL, "%c ", state_char);
+	if (player->loaded) {
+		line = appendstrf(NULL, "%c ", player_state_chars[player->state]);
 		line = appendstrf(line, "%s / ", timestr(player->time_pos));
 		line = appendstrf(line, "%s", timestr(player->time_end));
-		if (player->volume >= 0) {
-			line = appendstrf(line, " - vol: %u%", player->volume);
-		}
-		if (player->msg) {
+		if (player->volume >= 0)
+			line = appendstrf(line, " - vol: %u%%", player->volume);
+		if (player->msg)
 			line = appendstrf(line, " | [PLAYER] %s", player->msg);
-		}
 
 		wmove(pane->win, 1, 0);
 		ATTR_ON(pane->win, A_REVERSE);
@@ -633,16 +693,34 @@ cmd_vis(struct pane *pane, int sel)
 		ATTR_OFF(pane->win, A_REVERSE);
 
 		free(line);
+	} else {
+		if (player->msg) {
+			wmove(pane->win, 1, 0);
+			line = aprintf("[PLAYER] %s", player->msg);
+			wprintw(pane->win, "%-*.*s\n", pane->w, pane->w, line);
+			free(line);
+		}
 	}
 
 	if (sel || cmd_show) {
-		wmove(pane->win, 2, 0);
-		waddch(pane->win, cmd_mode == IMODE_SEARCH ? '/' : ':');
 		cmd = history->cmd;
-		wprintw(pane->win, "%-*.*ls", pane->w - 1, pane->w - 1, cmd->buf);
+		if (cmd != history->query) {
+			index = 0;
+			for (iter = history->list.next; iter; iter = iter->next, index++)
+				if (UPCAST(iter, struct inputln) == cmd)
+					break;
+			line = appendstrf(NULL, "[%i]%c ", iter ? index : -1,
+				cmd_mode == IMODE_SEARCH ? '/' : ':');
+		} else {
+			line = appendstrf(NULL, "%c", cmd_mode == IMODE_SEARCH ? '/' : ':');
+		}
+		offset = strlen(line);
+		line = appendstrf(line, "%ls", cmd->buf);
+		wprintw(pane->win, "%-*.*s", pane->w, pane->w, line);
+		free(line);
 		if (sel) { /* cursor */
 			ATTR_ON(pane->win, A_REVERSE);
-			wmove(pane->win, 2, 1 + cmd->cur);
+			wmove(pane->win, 2, offset + cmd->cur);
 			waddch(pane->win, cmd->cur < cmd->len ? cmd->buf[cmd->cur] : ' ');
 			ATTR_OFF(pane->win, A_REVERSE);
 		}
@@ -675,35 +753,41 @@ main_input(wint_t c)
 				player_next();
 		}
 		break;
-	case 't':
+	case L't':
+	case L' ':
 		player_toggle_pause();
 		break;
-	case 'n':
-	case '>':
+	case L'n':
+	case L'>':
 		player_next();
 		break;
-	case 'p':
-	case '<':
+	case L'p':
+	case L'<':
 		player_prev();
 		break;
-	case 'b':
+	case L'b':
 		player_seek(0);
 		break;
-	case ':':
+	case L's':
+		player_stop();
+		break;
+	case L':':
 		cmd_mode = IMODE_EXECUTE;
 		pane_sel = &pane_bot;
+		completion_reset = 1;
 		break;
-	case '+':
-		player_set_volume(MIN(100, player->volume + 5));
-		break;
-	case '-':
-		player_set_volume(MAX(0, player->volume - 5));
-		break;
-	case '/':
+	case L'/':
 		cmd_mode = IMODE_SEARCH;
 		pane_sel = &pane_bot;
+		completion_reset = 1;
 		break;
-	case 'q':
+	case L'+':
+		player_set_volume(MIN(100, player->volume + 5));
+		break;
+	case L'-':
+		player_set_volume(MAX(0, player->volume - 5));
+		break;
+	case L'q':
 		quit = 1;
 		break;
 	}

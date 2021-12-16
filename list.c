@@ -1,4 +1,4 @@
-#include "link.h"
+#include "list.h"
 #include "util.h"
 
 int
@@ -66,7 +66,7 @@ link_append(struct link *cur, struct link *link)
 		link->next->prev = link;
 }
 
-void
+struct link *
 link_pop(struct link *link)
 {
 	ASSERT(link != NULL);
@@ -75,6 +75,8 @@ link_pop(struct link *link)
 		link->prev->next = link->next;
 	if (link->next)
 		link->next->prev = link->prev;
+
+	return link;
 }
 
 struct link *
@@ -91,7 +93,7 @@ link_iter(struct link *link, int n)
 }
 
 void
-link_push_back(struct link *cur, struct link *link)
+list_push_back(struct link *cur, struct link *link)
 {
 	struct link *back;
 
