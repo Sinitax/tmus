@@ -19,6 +19,7 @@ struct link {
 
 /* list_XXX functions operate on the list head */
 
+int list_empty(struct link *head);
 int list_len(struct link *head);
 int list_ffind(struct link *head, struct link *link);
 

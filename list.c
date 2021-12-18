@@ -2,6 +2,12 @@
 #include "util.h"
 
 int
+list_empty(struct link *head)
+{
+	return head->next == NULL;
+}
+
+int
 list_len(struct link *head)
 {
 	struct link *iter;

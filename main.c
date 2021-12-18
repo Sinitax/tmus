@@ -14,6 +14,7 @@
 #include "curses.h"
 
 #include <dirent.h>
+#include <locale.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -156,6 +157,8 @@ void
 init(void)
 {
 	quit = 0;
+
+	setlocale(LC_ALL, "");
 
 	/* TODO handle as character intead of signal */
 	signal(SIGINT, exit);
@@ -532,10 +535,10 @@ track_input(wint_t c)
 		player_play_track(track);
 		return 1;
 	case KEY_PPAGE:
-		listnav_update_sel(&track_nav, track_nav.sel + track_nav.wlen / 2);
+		listnav_update_sel(&track_nav, track_nav.sel - track_nav.wlen / 2);
 		return 1;
 	case KEY_NPAGE:
-		listnav_update_sel(&track_nav, track_nav.sel - track_nav.wlen / 2);
+		listnav_update_sel(&track_nav, track_nav.sel + track_nav.wlen / 2);
 		return 1;
 	}
 
@@ -667,7 +670,8 @@ cmd_input(wint_t c)
 			inputln_copy(&completion_query, history->query);
 		}
 
-		res = completion(completion_query.buf, c == KEY_TAB, completion_reset);
+		res = completion(completion_query.buf,
+				c == KEY_TAB, completion_reset);
 		if (res) inputln_replace(history->query, res);
 		free(res);
 
@@ -703,7 +707,7 @@ cmd_vis(struct pane *pane, int sel)
 	wmove(pane->win, 0, 0);
 	style_on(pane->win, STYLE_TITLE);
 	wprintw(pane->win, " %-*.*ls\n", pane->w - 1, pane->w - 1,
-		player->track ? player->track->name : L"");
+			player->track ? player->track->name : L"");
 	style_off(pane->win, STYLE_TITLE);
 
 	if (player->loaded) {
@@ -714,6 +718,9 @@ cmd_vis(struct pane *pane, int sel)
 			line = appendstrf(line, " - vol: %u%%", player->volume);
 		if (player->msg)
 			line = appendstrf(line, " | [PLAYER] %s", player->msg);
+		if (!list_empty(&player->queue))
+			line = appendstrf(line, " | [QUEUE] %i tracks",
+					list_len(&player->queue));
 
 		wmove(pane->win, 1, 0);
 		ATTR_ON(pane->win, A_REVERSE);
@@ -755,6 +762,16 @@ cmd_vis(struct pane *pane, int sel)
 }
 
 void
+queue_hover(void)
+{
+	struct link *link;
+
+	link = link_iter(playlist.next, track_nav.sel);
+	ASSERT(link != NULL);
+	player_queue_append(UPCAST(link, struct ref)->data);
+}
+
+void
 main_input(wint_t c)
 {
 	switch (c) {
@@ -780,6 +797,9 @@ main_input(wint_t c)
 				player_next();
 			}
 		}
+		break;
+	case L'y':
+		queue_hover();
 		break;
 	case L'c':
 		player_toggle_pause();

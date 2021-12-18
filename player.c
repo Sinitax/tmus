@@ -62,6 +62,7 @@ player_update(void)
 {
 	struct mpd_status *status;
 	struct mpd_song *song;
+	struct ref *track;
 	const char *tmp;
 
 	status = mpd_run_status(player->conn);
@@ -86,7 +87,15 @@ player_update(void)
 		player->seek_delay -= 1;
 		if (!player->seek_delay)
 			player_play();
-	} 
+	}
+
+	if (!mpd_run_current_song(player->conn)
+			&& !list_empty(&player->queue)) {
+		track = UPCAST(link_pop(player->queue.next),
+			struct ref);
+		player_play_track(track->data);
+		ref_free(track);
+	}
 
 	song = mpd_run_current_song(player->conn);
 	if (song) {
@@ -118,7 +127,12 @@ player_queue_clear(void)
 void
 player_queue_append(struct track *track)
 {
-	player_queue_insert(track, list_len(&player->queue));
+	struct ref *ref;
+	struct link *link;
+
+	ref = ref_init(track);
+	link = link_back(&player->queue);
+	link_append(link, LINK(ref));
 }
 
 void
@@ -128,8 +142,8 @@ player_queue_insert(struct track *track, size_t pos)
 	struct link *link;
 
 	ref = ref_init(track);
-	link = link_iter(&player->queue, pos);
-	link_append(link, &ref->link);
+	link = link_iter(player->queue.next, pos);
+	link_prepend(link, LINK(ref));
 }
 
 int
