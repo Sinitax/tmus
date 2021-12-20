@@ -44,8 +44,8 @@ player_init(void)
 	player->msg = NULL;
 	player->msglvl = PLAYER_MSG_INFO;
 
-	mpd_run_stop(player->conn);
-	mpd_run_clear(player->conn);
+	// mpd_run_stop(player->conn);
+	// mpd_run_clear(player->conn);
 }
 
 void
@@ -53,7 +53,7 @@ player_free(void)
 {
 	if (!player->conn) return;
 	mpd_run_stop(player->conn);
-	mpd_run_clear(player->conn);
+	// mpd_run_clear(player->conn);
 	mpd_connection_free(player->conn);
 }
 
