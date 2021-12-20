@@ -32,3 +32,4 @@ struct link *link_iter(struct link *link, int n);
 
 void list_push_back(struct link *list, struct link *link);
 
+//rstrrrstrssiimmrsrsssts

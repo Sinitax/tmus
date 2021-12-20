@@ -1,6 +1,6 @@
 #pragma once
 
-#include "link.h"
+#include "list.h"
 
 struct ref {
 	void *data;
