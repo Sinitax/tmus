@@ -32,6 +32,7 @@ player_init(void)
 	ASSERT(player->conn != NULL);
 
 	player->queue = LIST_HEAD;
+	player->history = LIST_HEAD;
 	player->track = NULL;
 	player->state = PLAYER_STATE_PAUSED;
 
@@ -44,16 +45,20 @@ player_init(void)
 	player->msg = NULL;
 	player->msglvl = PLAYER_MSG_INFO;
 
-	// mpd_run_stop(player->conn);
 	// mpd_run_clear(player->conn);
 }
 
 void
 player_free(void)
 {
+	struct link *iter;
+
 	if (!player->conn) return;
-	mpd_run_stop(player->conn);
-	// mpd_run_clear(player->conn);
+
+	refs_free(&player->history);
+	refs_free(&player->queue);
+
+	mpd_run_clear(player->conn);
 	mpd_connection_free(player->conn);
 }
 
@@ -62,8 +67,35 @@ player_update(void)
 {
 	struct mpd_status *status;
 	struct mpd_song *song;
-	struct ref *track;
+	struct ref *ref;
 	const char *tmp;
+
+	if (player->action != PLAYER_ACTION_NONE) {
+		mpd_run_clear(player->conn);
+
+		ref = NULL;
+		switch (player->action) {
+		case PLAYER_ACTION_PLAY_PREV:
+			if (!list_empty(&player->history))
+				break;
+			ref = UPCAST(list_pop_front(&player->history),
+				struct ref);
+			player_play_track(ref->data);
+			ref_free(ref);
+			break;
+		case PLAYER_ACTION_PLAY_NEXT:
+			if (list_empty(&player->queue))
+				break;
+			ref = UPCAST(list_pop_front(&player->queue),
+				struct ref);
+			player_play_track(ref->data);
+			ref_free(ref);
+			break;
+		default:
+			ASSERT(0);
+		}
+		player->action = PLAYER_ACTION_NONE;
+	}
 
 	status = mpd_run_status(player->conn);
 	ASSERT(status != NULL);
@@ -84,17 +116,9 @@ player_update(void)
 	player->volume = mpd_status_get_volume(status);
 
 	if (player->seek_delay) {
-		player->seek_delay -= 1;
+		player->seek_delay--;
 		if (!player->seek_delay)
 			player_play();
-	}
-
-	if (!mpd_run_current_song(player->conn)
-			&& !list_empty(&player->queue)) {
-		track = UPCAST(link_pop(player->queue.next),
-			struct ref);
-		player_play_track(track->data);
-		ref_free(track);
 	}
 
 	song = mpd_run_current_song(player->conn);
@@ -104,6 +128,10 @@ player_update(void)
 		player->time_end = mpd_song_get_duration(song);
 		mpd_song_free(song);
 	} else {
+		if (player->track) {
+			list_push_front(&player->history,
+				LINK(ref_init(player->track)));
+		}
 		player->track = NULL;
 		player->loaded = false;
 		player->time_pos = 0;
@@ -203,13 +231,15 @@ player_resume(void)
 int
 player_next(void)
 {
-	if (!player->loaded) return PLAYER_ERR;
+	player_clear_msg();
 
-	if (!mpd_run_next(player->conn)) {
-		PLAYER_STATUS(PLAYER_MSG_ERR, "Playing next track failed");
-		mpd_run_clearerror(player->conn);
+	if (!player->loaded)
 		return PLAYER_ERR;
-	}
+
+	if (!mpd_run_clear(player->conn))
+		return PLAYER_ERR;
+
+	player->action = PLAYER_ACTION_PLAY_NEXT;
 
 	return PLAYER_OK;
 }
@@ -218,13 +248,13 @@ int
 player_prev(void)
 {
 	/* TODO prevent mpd from dying on error, how to use properly */
-	if (!player->loaded) return PLAYER_ERR;
-
-	if (!mpd_run_previous(player->conn)) {
-		PLAYER_STATUS(PLAYER_MSG_ERR, "Playing prev track failed");
-		mpd_run_clearerror(player->conn);
+	if (!player->loaded)
 		return PLAYER_ERR;
-	}
+
+	if (!mpd_run_clear(player->conn))
+		return PLAYER_ERR;
+
+	player->action = PLAYER_ACTION_PLAY_PREV;
 
 	return PLAYER_OK;
 }
@@ -232,6 +262,8 @@ player_prev(void)
 int
 player_play(void)
 {
+	player_clear_msg();
+
 	if (!mpd_run_play(player->conn)) {
 		PLAYER_STATUS(PLAYER_MSG_ERR, "Playing track failed");
 		mpd_run_clearerror(player->conn);
@@ -244,6 +276,8 @@ player_play(void)
 int
 player_stop(void)
 {
+	player_clear_msg();
+
 	if (!mpd_run_stop(player->conn)) {
 		PLAYER_STATUS(PLAYER_MSG_ERR, "Stopping track failed");
 		mpd_run_clearerror(player->conn);
@@ -256,6 +290,8 @@ player_stop(void)
 int
 player_seek(int sec)
 {
+	player_clear_msg();
+
 	if (!player->loaded || player->state == PLAYER_STATE_STOPPED) {
 		PLAYER_STATUS(PLAYER_MSG_ERR, "No track loaded");
 		return PLAYER_ERR;
@@ -276,6 +312,8 @@ player_seek(int sec)
 int
 player_set_volume(unsigned int vol)
 {
+	player_clear_msg();
+
 	if (player->volume == -1) {
 		PLAYER_STATUS(PLAYER_MSG_INFO, "Setting volume not supported");
 		mpd_run_clearerror(player->conn);

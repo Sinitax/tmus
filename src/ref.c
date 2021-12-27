@@ -14,7 +14,7 @@ ref_init(void *data)
 }
 
 void
-ref_free(struct ref *ref)
+ref_free(void *ref)
 {
 	free(ref);
 }
@@ -22,12 +22,7 @@ ref_free(struct ref *ref)
 void
 refs_free(struct link *head)
 {
-	struct link *cur;
-
-	while (head->next) {
-		cur = link_pop(head->next);
-		ref_free(UPCAST(cur, struct ref));
-	}
+	list_free(head, ref_free, LINK_OFFSET(struct ref));
 }
 
 static struct link *

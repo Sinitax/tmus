@@ -20,18 +20,27 @@ enum {
 };
 
 enum {
+	PLAYER_STATE_NONE,
 	PLAYER_STATE_PAUSED,
 	PLAYER_STATE_PLAYING,
 	PLAYER_STATE_STOPPED
+};
+
+enum {
+	PLAYER_ACTION_NONE,
+	PLAYER_ACTION_PLAY_PREV,
+	PLAYER_ACTION_PLAY_NEXT
 };
 
 struct player {
 	struct mpd_connection *conn;
 
 	struct link queue;
+	struct link history;
 	struct track *track;
 	int state;
 
+	int action;
 	int seek_delay;
 
 	int loaded;

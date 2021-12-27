@@ -9,7 +9,7 @@ struct ref {
 };
 
 struct ref *ref_init(void *data);
-void ref_free(struct ref *ref);
+void ref_free(void *ref);
 
 void refs_free(struct link *head);
 int refs_incl(struct link *head, void *data);

@@ -548,9 +548,9 @@ track_input(wint_t c)
 		listnav_update_sel(&track_nav, track_nav.sel + 1);
 		return 1;
 	case KEY_ENTER:
-		link = link_iter(tracks.next, track_nav.sel);
+		link = link_iter(playlist.next, track_nav.sel);
 		ASSERT(link != NULL);
-		track = UPCAST(link, struct track);
+		track = UPCAST(link, struct ref)->data;
 		player->track = track;
 		player_play_track(track);
 		return 1;
@@ -848,7 +848,7 @@ main_input(wint_t c)
 	case L'w':
 		autoplay.enabled ^= 1;
 		break;
-	case KEY_CTRL('s'):
+	case KEY_CTRL('w'):
 		autoplay.shuffle ^= 1;
 		break;
 	case L'b':
@@ -918,32 +918,30 @@ update_player(void)
 
 	player_update();
 
-	if (!player->loaded && autoplay.enabled && playlist.next) {
+	if (list_empty(&playlist)) last = NULL;
+
+	/* dont start autoplay before the first song was chosen */
+	if (!player->loaded && autoplay.enabled && last) {
+		iter = NULL;
 		if (autoplay.shuffle) {
 			/* TODO better algorithm for random sequence */
 			index = rand() % list_len(&playlist);
-			iter = link_iter(&playlist, index);
+			iter = link_iter(playlist.next, index);
 			ASSERT(iter != NULL);
-		} else {
-			if (last) {
-				iter = playlist.next;
-				for (; iter; iter = iter->next) {
-					track = UPCAST(iter, struct ref)->data;
-					if (track == last)
-						break;
-				}
-				iter = iter->next;
-				if (!iter) {
-					last = NULL;
-					return;
-				}
-			} else {
-				iter = playlist.next;
+		} else if (last) {
+			iter = playlist.next;
+			for (; iter; iter = iter->next) {
+				track = UPCAST(iter, struct ref)->data;
+				if (track == last)
+					break;
 			}
+			iter = iter->next;
 		}
+		if (!iter) iter = playlist.next;
+
 		track = UPCAST(iter, struct ref)->data;
 		player_play_track(track);
-	} else if (player->track) {
+	} else {
 		last = player->track;
 	}
 }
