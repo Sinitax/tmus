@@ -22,6 +22,25 @@
 static struct player player_static;
 struct player *player;
 
+static void
+handle_mpd_status(struct mpd_connection *conn, int status)
+{
+	switch (status) {
+	case MPD_ERROR_SYSTEM:
+		PLAYER_STATUS(PLAYER_MSG_ERR, "%s",
+			mpd_connection_get_error_message(conn));
+		break;
+	case MPD_ERROR_SERVER:
+	case MPD_ERROR_ARGUMENT:
+		if (!mpd_connection_clear_error(conn))
+			PANIC("Player failed to recover from error");
+		break;
+	case MPD_ERROR_CLOSED:
+		PANIC("Player encountered non-recoverable error");
+		break;
+	}
+}
+
 void
 player_init(void)
 {
@@ -92,7 +111,7 @@ player_update(void)
 			ref_free(ref);
 			break;
 		default:
-			ASSERT(0);
+			PANIC();
 		}
 		player->action = PLAYER_ACTION_NONE;
 	}
@@ -111,7 +130,7 @@ player_update(void)
 		player->state = PLAYER_STATE_STOPPED;
 		break;
 	default:
-		ASSERT(0);
+		PANIC();
 	}
 	player->volume = mpd_status_get_volume(status);
 

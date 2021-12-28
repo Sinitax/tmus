@@ -2,6 +2,7 @@
 
 #include "util.h"
 
+#include "execinfo.h"
 #include "ncurses.h"
 
 #include <stdarg.h>
@@ -37,6 +38,14 @@ strnwidth(const char *s, int n)
 
 done:
 	return width;
+}
+
+void
+panic(const char *msg, const char *file, int line)
+{
+	endwin();
+	fprintf(stderr, "Panic at %s:%i (%s)\n", file, line, msg);
+	exit(1);
 }
 
 void

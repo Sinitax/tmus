@@ -1,7 +1,6 @@
-CC = clang
 CFLAGS = -I src -g
 LDLIBS = -lcurses -lreadline -lmpdclient
-WARNFLAGS = -Wno-pragma-once-outside-header
+DEPFLAGS =  -MT $@ -MMD -MP -MF build/$*.d
 
 SRCS = $(wildcard src/*.c)
 OBJS = $(SRCS:src/%.c=build/%.o)
@@ -12,22 +11,17 @@ DEPS = $(OBJS:%.o=%.d)
 all: tmus
 
 clean:
-	rm tmus
+	rm -rf build
 
 build:
 	mkdir build
 
 build/%.o: src/%.c build/%.d
-	@echo DEPS: $^
-	$(CC) -c -o $@ $< $(CFLAGS)
+	$(CC) -c -o $@ $(DEPFLAGS) $(CFLAGS) $<
 
-build/main.d: src/main.c | build
-	$(CC) -c -MT build/main.o -MMD -MP -MF $@ $<
+build/%.d: | build;
 
-build/%.d: src/%.c src/%.h | build
-	$(CC) -c -MT build/$*.o -MMD -MP -MF $@ $^ $(WARNFLAGS)
-
--include $(DEPS)
+include $(DEPS)
 
 tmus: $(OBJS)
 	$(CC) -o $@ $^ $(CFLAGS) $(LDLIBS)
