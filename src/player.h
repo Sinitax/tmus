@@ -39,8 +39,11 @@ struct player {
 	struct link queue;
 	struct link history;
 
-	/* current loaded track */
+	/* last player track */
 	struct track *track;
+
+	/* player has a track loaded,
+	 * not necessarily player->track */
 	int loaded;
 
 	/* stopped, paused or playing */
