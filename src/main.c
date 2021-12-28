@@ -74,11 +74,6 @@ struct cmd {
 	cmd_handler func;
 };
 
-struct autoplay {
-	int enabled;
-	int shuffle;
-};
-
 static const char player_state_chars[] = {
 	[PLAYER_STATE_PAUSED] = '|',
 	[PLAYER_STATE_PLAYING] = '>',
@@ -108,7 +103,8 @@ static struct history search_history, command_history;
 static struct history *history;
 static int cmd_show, cmd_mode;
 
-static struct autoplay autoplay;
+static int autoplay;
+static int shuffle;
 
 static struct pane *tag_pane;
 static struct listnav tag_nav;
@@ -143,7 +139,7 @@ static void style_off(WINDOW *win, int style);
 static wchar_t *command_name_generator(const wchar_t *text, int fwd, int state);
 static wchar_t *track_name_generator(const wchar_t *text, int fwd, int state);
 
-static void select_current_tag(void);
+static void toggle_current_tag(void);
 static int tag_input(wint_t c);
 static void tag_vis(struct pane *pane, int sel);
 
@@ -180,8 +176,6 @@ init(void)
 	history_init(&search_history);
 	history_init(&command_history);
 
-	datadir = getenv("TMUS_DATA");
-	ASSERT(datadir != NULL);
 	data_load();
 
 	player_init();
@@ -215,8 +209,8 @@ init(void)
 	playlist = LIST_HEAD;
 	tags_sel = LIST_HEAD;
 
-	autoplay.enabled = 0;
-	autoplay.shuffle = 0;
+	autoplay = 0;
+	shuffle = 0;
 
 	listnav_init(&tag_nav);
 	listnav_init(&track_nav);
@@ -248,6 +242,9 @@ data_load(void)
 	DIR *dir;
 
 	tags = LIST_HEAD;
+
+	datadir = getenv("TMUS_DATA");
+	ASSERT(datadir != NULL);
 
 	dir = opendir(datadir);
 	ASSERT(dir != NULL);
@@ -440,7 +437,7 @@ track_name_generator(const wchar_t *text, int fwd, int reset)
 }
 
 void
-select_current_tag(void)
+toggle_current_tag(void)
 {
 	struct link *link, *iter;
 	struct track *track;
@@ -481,8 +478,13 @@ tag_input(wint_t c)
 		listnav_update_sel(&tag_nav, tag_nav.sel + 1);
 		return 1;
 	case KEY_SPACE:
-		select_current_tag();
+		player->next = NULL;
+		toggle_current_tag();
 		return 1;
+	case KEY_ENTER:
+		player->next = NULL;
+		refs_free(&tags_sel);
+		toggle_current_tag();
 	case KEY_NPAGE:
 		listnav_update_sel(&track_nav,
 			track_nav.sel - track_nav.wlen / 2);
@@ -744,10 +746,11 @@ cmd_vis(struct pane *pane, int sel)
 			line = appendstrf(line, " | [QUEUE] %i tracks",
 					list_len(&player->queue));
 
-		if (autoplay.enabled && !autoplay.shuffle)
+		if (autoplay)
 			line = appendstrf(line, " | AUTOPLAY");
-		else if (autoplay.enabled && autoplay.shuffle)
-			line = appendstrf(line, " | AUTOPLAY [S]");
+
+		if (shuffle)
+			line = appendstrf(line, " | SHUFFLE");
 
 		wmove(pane->win, 1, 0);
 		ATTR_ON(pane->win, A_REVERSE);
@@ -846,10 +849,11 @@ main_input(wint_t c)
 		player_prev();
 		break;
 	case L'w':
-		autoplay.enabled ^= 1;
+		autoplay ^= 1;
 		break;
-	case KEY_CTRL('w'):
-		autoplay.shuffle ^= 1;
+	case L'g':
+		player->next = NULL;
+		shuffle ^= 1;
 		break;
 	case L'b':
 		player_seek(0);
@@ -911,38 +915,37 @@ usercmd_save(const char *args)
 void
 update_player(void)
 {
-	static struct track *last = NULL;
+	static struct track *first = NULL;
 	struct track *track;
 	struct link *iter;
 	int index;
 
 	player_update();
 
-	if (list_empty(&playlist)) last = NULL;
+	if (list_empty(&playlist)) first = NULL;
 
 	/* dont start autoplay before the first song was chosen */
-	if (!player->loaded && autoplay.enabled && last) {
+	if (!player->next && first) {
 		iter = NULL;
-		if (autoplay.shuffle) {
+		if (shuffle) {
 			/* TODO better algorithm for random sequence */
 			index = rand() % list_len(&playlist);
 			iter = link_iter(playlist.next, index);
 			ASSERT(iter != NULL);
-		} else if (last) {
+		} else if (player->loaded) {
 			iter = playlist.next;
 			for (; iter; iter = iter->next) {
 				track = UPCAST(iter, struct ref)->data;
-				if (track == last)
+				if (track == player->track)
 					break;
 			}
 			iter = iter->next;
 		}
 		if (!iter) iter = playlist.next;
 
-		track = UPCAST(iter, struct ref)->data;
-		player_play_track(track);
+		player->next = UPCAST(iter, struct ref)->data;
 	} else {
-		last = player->track;
+		first = player->track;
 	}
 }
 
@@ -974,6 +977,7 @@ main(int argc, const char **argv)
 			panes[i]->update(panes[i], pane_sel == panes[i]);
 			wnoutrefresh(panes[i]->win);
 		}
+
 		main_vis();
 		doupdate();
 

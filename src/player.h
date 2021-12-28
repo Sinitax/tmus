@@ -33,20 +33,39 @@ enum {
 };
 
 struct player {
+	/* TODO move implementation details to source file */
 	struct mpd_connection *conn;
 
 	struct link queue;
 	struct link history;
+
+	/* current loaded track */
 	struct track *track;
+	int loaded;
+
+	/* stopped, paused or playing */
 	int state;
 
+	/* TODO: replace with JIT solution */
+	/* track to play when queue is empty
+	 * and player_next is called */
+	struct track *next;
+
+	/* automatically start playing player->next
+	 * when queue is empty */
+	int autoplay;
+
 	int action;
+
+	/* number of frames to wait before unpausing after
+	 * seek to prevent pause-play cycle noises */
 	int seek_delay;
 
-	int loaded;
 	int volume;
+
 	unsigned int time_pos, time_end;
 
+	/* status messaging */
 	char *msg;
 	int msglvl;
 };
@@ -71,8 +90,6 @@ int player_play(void);
 int player_stop(void);
 
 int player_set_volume(unsigned int vol);
-
-void player_clear_msg(void);
 
 extern struct player *player;
 

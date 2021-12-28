@@ -70,6 +70,7 @@ struct link *
 list_pop_front(struct link *head)
 {
 	ASSERT(head != NULL);
+	if (!head->next) return NULL;
 	return link_pop(head->next);
 }
 
