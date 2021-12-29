@@ -8,8 +8,7 @@ struct track {
 	wchar_t *name;
 	struct link tags;
 	char *fname, *fpath;
-
-	struct link link;
+	int fid;
 };
 
 struct track *track_init(const char *dir, const char *file);

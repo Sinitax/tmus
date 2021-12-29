@@ -7,7 +7,7 @@ ref_init(void *data)
 	struct ref *ref;
 
 	ref = malloc(sizeof(struct ref));
-	ASSERT(ref != NULL);
+	if (!ref) return NULL;
 	ref->link = LINK_EMPTY;
 	ref->data = data;
 	return ref;

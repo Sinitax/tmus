@@ -6,12 +6,12 @@
 #define MIN(a, b) ((a) > (b) ? (b) : (a))
 #define ARRLEN(x) (sizeof(x)/sizeof((x)[0]))
 
-#define PANIC(...) panic("" __VA_ARGS__, __FILE__, __LINE__)
+#define PANIC(...) panic(__FILE__, __LINE__, "" __VA_ARGS__)
 #define ASSERT(x) assert((x), __FILE__, __LINE__, #x)
 
 int strnwidth(const char *s, int n);
 
-void panic(const char *msg, const char *file, int line);
+void panic(const char *file, int line, const char *msg, ...);
 void assert(int cond, const char *file, int line, const char *condstr);
 
 char *aprintf(const char *fmtstr, ...);

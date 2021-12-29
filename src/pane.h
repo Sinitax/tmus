@@ -21,5 +21,6 @@ struct pane {
 
 void pane_init(struct pane *pane, pane_handler handle, pane_updater update);
 void pane_resize(struct pane *pane, int sx, int sy, int ex, int ey);
+void pane_clearln(struct pane *pane, int y);
 void pane_free(struct pane *p);
 

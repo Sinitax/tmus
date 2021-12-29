@@ -5,7 +5,6 @@
 #include "list.h"
 #include "history.h"
 #include "tag.h"
-#include "track.h"
 #include "pane.h"
 #include "player.h"
 #include "listnav.h"
@@ -17,6 +16,7 @@
 #include <dirent.h>
 #include <locale.h>
 #include <signal.h>
+#include <sys/stat.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,6 +44,7 @@ enum {
 	STYLE_ITEM_SEL,
 	STYLE_ITEM_HOVER,
 	STYLE_ITEM_HOVER_SEL,
+	STYLE_PREV,
 	STYLE_COUNT
 };
 
@@ -80,6 +81,11 @@ static struct pane *const panes[] = {
 	&pane_bot
 };
 
+/* 'tracks' holds all *unique* tracks */
+static struct link tracks;
+static struct link tags;
+static struct link tags_sel;
+
 /* bottom 'cmd' pane for search / exec */
 static struct pane *cmd_pane;
 static struct history search_history, command_history;
@@ -92,16 +98,10 @@ static completion_gen completion;
 /* left pane for tags */
 static struct pane *tag_pane;
 static struct listnav tag_nav;
-static struct link tags;
-static struct link tags_sel;
 
 /* right pane for tracks */
 static struct pane *track_pane;
 static struct listnav track_nav;
-static struct link playlist;
-static struct link tracks;
-static int autoplay;
-static int shuffle;
 
 static void init(void);
 static void cleanup(int code, void *arg);
@@ -114,6 +114,7 @@ static void ncurses_init(void);
 
 static void data_load(void);
 static void data_save(void);
+static void data_free(void);
 
 static void tracks_load(struct tag *tag);
 static void tracks_save(struct tag *tag);
@@ -134,16 +135,14 @@ static void tag_pane_vis(struct pane *pane, int sel);
 static int track_pane_input(wint_t c);
 static void track_pane_vis(struct pane *pane, int sel);
 
-static int cmd_input(wint_t c);
-static void cmd_vis(struct pane *pane, int sel);
+static int cmd_pane_input(wint_t c);
+static void cmd_pane_vis(struct pane *pane, int sel);
 
 static void queue_hover(void);
 static void main_input(wint_t c);
 static void main_vis(void);
 
 static int usercmd_save(const wchar_t *args);
-
-static void update_player(void);
 
 const struct cmd cmds[] = {
 	{ L"save", usercmd_save },
@@ -198,10 +197,11 @@ tui_init(void)
 	style_init(STYLE_ITEM_SEL, COLOR_YELLOW, COLOR_BLACK, A_BOLD);
 	style_init(STYLE_ITEM_HOVER, COLOR_WHITE, COLOR_BLUE, 0);
 	style_init(STYLE_ITEM_HOVER_SEL, COLOR_YELLOW, COLOR_BLUE, A_BOLD);
+	style_init(STYLE_PREV, COLOR_WHITE, COLOR_BLACK, A_DIM);
 
 	pane_init((tag_pane = &pane_left), tag_pane_input, tag_pane_vis);
 	pane_init((track_pane = &pane_right), track_pane_input, track_pane_vis);
-	pane_init((cmd_pane = &pane_bot), cmd_input, cmd_vis);
+	pane_init((cmd_pane = &pane_bot), cmd_pane_input, cmd_pane_vis);
 
 	pane_sel = &pane_left;
 	pane_top_sel = pane_sel;
@@ -279,8 +279,6 @@ data_load(void)
 
 	tracks = LIST_HEAD;
 	tags = LIST_HEAD;
-
-	playlist = LIST_HEAD;
 	tags_sel = LIST_HEAD;
 
 	datadir = getenv("TMUS_DATA");
@@ -296,23 +294,11 @@ data_load(void)
 		if (!strcmp(ent->d_name, ".."))
 			continue;
 
-		tag = malloc(sizeof(struct tag));
-		ASSERT(tag != NULL);
-		tag->fname = strdup(ent->d_name);
-		ASSERT(tag->fname != NULL);
-		tag->fpath = aprintf("%s/%s", datadir, ent->d_name);
-		ASSERT(tag->fpath != NULL);
-		tag->name = sanitized(tag->fname);
-		ASSERT(tag->name != NULL);
-		tag->link = LINK_EMPTY;
+		tag = tag_init(datadir, ent->d_name);
 		list_push_back(&tags, LINK(tag));
-
 		tracks_load(tag);
 	}
 	closedir(dir);
-
-	autoplay = 0;
-	shuffle = 0;
 }
 
 void
@@ -322,10 +308,17 @@ data_save(void)
 }
 
 void
+data_free(void)
+{
+	/* TODO free track info */
+}
+
+void
 tracks_load(struct tag *tag)
 {
+	struct track *track, *track_iter;
 	struct dirent *ent;
-	struct track *track;
+	struct link *iter;
 	struct ref *ref;
 	DIR *dir;
 
@@ -340,9 +333,28 @@ tracks_load(struct tag *tag)
 			continue;
 
 		track = track_init(tag->fpath, ent->d_name);
+
+		track->tags = LIST_HEAD;
 		ref = ref_init(tag);
+		ASSERT(ref != NULL);
 		list_push_back(&track->tags, LINK(ref));
-		list_push_back(&tracks, LINK(track));
+
+		ref = ref_init(track);
+		ASSERT(ref != NULL);
+		list_push_back(&tag->tracks, LINK(ref));
+
+		for (iter = tracks.next; iter; iter = iter->next) {
+			track_iter = UPCAST(iter, struct ref)->data;
+			if (track->fid == track_iter->fid)
+				break;
+		}
+
+		if (!iter) {
+			ref = ref_init(track);
+			ASSERT(ref != NULL);
+			list_push_back(&tracks, LINK(ref));
+		}
+
 	}
 	closedir(dir);
 }
@@ -414,19 +426,23 @@ wchar_t *
 track_name_gen(const wchar_t *text, int fwd, int reset)
 {
 	static struct link *cur;
+	struct link *iter;
 	struct track *track;
 
 	if (reset) {
 		cur = tracks.next;
-	} else if (cur) {
-		cur = fwd ? cur->next : cur->prev;
+		iter = cur;
+	} else {
+		iter = fwd ? cur->next : cur->prev;
 	}
 
-	while (cur != &tracks && cur) {
-		track = UPCAST(cur, struct track);
-		if (wcsstr(track->name, text))
+	while (iter && iter != &tracks) {
+		track = UPCAST(iter, struct ref)->data;
+		if (wcsstr(track->name, text)) {
+			cur = iter;
 			return wcsdup(track->name);
-		cur = fwd ? cur->next : cur->prev;
+		}
+		iter = fwd ? iter->next : iter->prev;
 	}
 
 	return NULL;
@@ -439,6 +455,7 @@ toggle_current_tag(void)
 	struct track *track;
 	struct tag *tag;
 	struct ref *ref;
+	int in_tags, in_playlist;
 
 	link = link_iter(tags.next, tag_nav.sel);
 	ASSERT(link != NULL);
@@ -453,16 +470,13 @@ toggle_current_tag(void)
 	}
 
 	/* rebuild the full playlist */
-	refs_free(&playlist);
+	refs_free(&player->playlist);
 	for (link = tags_sel.next; link; link = link->next) {
 		tag = UPCAST(link, struct ref)->data;
-		for (iter = tracks.next; iter; iter = iter->next) {
-			track = UPCAST(iter, struct track);
-			if (refs_incl(&track->tags, tag)
-					&& !refs_incl(&playlist, track)) {
-				ref = ref_init(track);
-				list_push_back(&playlist, LINK(ref));
-			}
+		for (iter = tag->tracks.next; iter; iter = iter->next) {
+			ref = ref_init(UPCAST(iter, struct ref)->data);
+			ASSERT(ref != NULL);
+			list_push_back(&player->playlist, LINK(ref));
 		}
 	}
 }
@@ -478,11 +492,9 @@ tag_pane_input(wint_t c)
 		listnav_update_sel(&tag_nav, tag_nav.sel + 1);
 		return 1;
 	case KEY_SPACE:
-		player->next = NULL;
 		toggle_current_tag();
 		return 1;
 	case KEY_ENTER:
-		player->next = NULL;
 		refs_free(&tags_sel);
 		toggle_current_tag();
 		return 1;
@@ -522,16 +534,20 @@ tag_pane_vis(struct pane *pane, int sel)
 			style_on(pane->win, STYLE_ITEM_HOVER_SEL);
 		else if (sel && index == tag_nav.sel)
 			style_on(pane->win, STYLE_ITEM_HOVER);
+		else if (index == tag_nav.sel)
+			style_on(pane->win, STYLE_PREV);
 		else if (tsel)
 			style_on(pane->win, STYLE_ITEM_SEL);
 
 		wmove(pane->win, 1 + index - tag_nav.wmin, 0);
 		wprintw(pane->win, "%*.*s", pane->w, pane->w, tag->name);
 
-		if (index == tag_nav.sel && tsel)
+		if (sel && index == tag_nav.sel && tsel)
 			style_off(pane->win, STYLE_ITEM_HOVER_SEL);
-		else if (index == tag_nav.sel)
+		else if (sel && index == tag_nav.sel)
 			style_off(pane->win, STYLE_ITEM_HOVER);
+		else if (index == tag_nav.sel)
+			style_off(pane->win, STYLE_PREV);
 		else if (tsel)
 			style_off(pane->win, STYLE_ITEM_SEL);
 	}
@@ -551,10 +567,9 @@ track_pane_input(wint_t c)
 		listnav_update_sel(&track_nav, track_nav.sel + 1);
 		return 1;
 	case KEY_ENTER:
-		link = link_iter(playlist.next, track_nav.sel);
+		link = link_iter(player->playlist.next, track_nav.sel);
 		ASSERT(link != NULL);
 		track = UPCAST(link, struct ref)->data;
-		player->track = track;
 		player_play_track(track);
 		return 1;
 	case KEY_PPAGE:
@@ -580,11 +595,11 @@ track_pane_vis(struct pane *pane, int sel)
 	werase(pane->win);
 	pane_title(pane, "Tracks", sel);
 
-	listnav_update_bounds(&track_nav, 0, list_len(&playlist));
+	listnav_update_bounds(&track_nav, 0, list_len(&player->playlist));
 	listnav_update_wlen(&track_nav, pane->h - 1);
 
 	index = 0;
-	for (iter = playlist.next; iter; iter = iter->next, index++) {
+	for (iter = player->playlist.next; iter; iter = iter->next, index++) {
 		track = UPCAST(iter, struct ref)->data;
 
 		if (index < track_nav.wmin) continue;
@@ -594,6 +609,8 @@ track_pane_vis(struct pane *pane, int sel)
 			style_on(pane->win, STYLE_ITEM_HOVER_SEL);
 		else if (sel && index == track_nav.sel)
 			style_on(pane->win, STYLE_ITEM_HOVER);
+		else if (index == track_nav.sel)
+			style_on(pane->win, STYLE_PREV);
 		else if (track == player->track)
 			style_on(pane->win, STYLE_ITEM_SEL);
 
@@ -604,6 +621,8 @@ track_pane_vis(struct pane *pane, int sel)
 			style_off(pane->win, STYLE_ITEM_HOVER_SEL);
 		else if (sel && index == track_nav.sel)
 			style_off(pane->win, STYLE_ITEM_HOVER);
+		else if (index == track_nav.sel)
+			style_off(pane->win, STYLE_PREV);
 		else if (track == player->track)
 			style_off(pane->win, STYLE_ITEM_SEL);
 	}
@@ -634,7 +653,7 @@ play_track(const wchar_t *query)
 	struct link *iter;
 
 	for (iter = tracks.next; iter; iter = iter->next) {
-		track = UPCAST(iter, struct track);
+		track = UPCAST(iter, struct ref)->data;
 		if (wcsstr(track->name, query)) {
 			player_play_track(track);
 			return 1;
@@ -645,7 +664,7 @@ play_track(const wchar_t *query)
 }
 
 int
-cmd_input(wint_t c)
+cmd_pane_input(wint_t c)
 {
 	wchar_t *res;
 
@@ -730,7 +749,7 @@ cmd_input(wint_t c)
 }
 
 void
-cmd_vis(struct pane *pane, int sel)
+cmd_pane_vis(struct pane *pane, int sel)
 {
 	static wchar_t *linebuf = NULL;
 	static int linecap = 0;
@@ -741,20 +760,27 @@ cmd_vis(struct pane *pane, int sel)
 
 	werase(pane->win);
 
+	/* TODO add clear_line func to fill with spaces instead of
+	 * filling buffer */
+
 	/* static line buffer for perf */
-	if (pane->w + 1 > linecap) {
-		linecap = MAX(linecap, pane->w + 1);
+	if (pane->w > linecap) {
+		linecap = MAX(linecap, pane->w);
 		linebuf = realloc(linebuf, linecap * sizeof(wchar_t));
 	}
 	end = linebuf + linecap;
 
-	wmove(pane->win, 0, 0);
+	/* track name */
 	style_on(pane->win, STYLE_TITLE);
-	wprintw(pane->win, " %-*.*ls\n", pane->w - 1, pane->w - 1,
-			player->track ? player->track->name : L"");
+	pane_clearln(pane, 0);
+	if (player->track) {
+		swprintf(linebuf, linecap, L"%ls", player->track->name);
+		mvwaddwstr(pane->win, 0, 1, linebuf);
+	}
 	style_off(pane->win, STYLE_TITLE);
 
 	if (player->loaded) {
+		/* status line */
 		line = linebuf;
 		line += swprintf(line, end - line, L"%c ",
 			player_state_chars[player->state]);
@@ -779,27 +805,31 @@ cmd_vis(struct pane *pane, int sel)
 				list_len(&player->queue));
 		}
 
-		if (autoplay) {
+		if (player->autoplay) {
 			line += swprintf(line, end - line, L" | AUTOPLAY");
 		}
 
-		if (shuffle) {
+		if (player->shuffle) {
 			line += swprintf(line, end - line, L" | SHUFFLE");
 		}
 
-		line += swprintf(line, end - line, L"%*s", pane->w, L" ");
-
 		ATTR_ON(pane->win, A_REVERSE);
+		pane_clearln(pane, 1);
 		mvwaddwstr(pane->win, 1, 0, linebuf);
 		ATTR_OFF(pane->win, A_REVERSE);
 	} else if (player->msg) {
+		/* player message */
 		line = linebuf;
 		line += swprintf(line, linecap, L"[PLAYER] %s", player->msg);
-		line += swprintf(line, end - line, L"%*s", pane->w, L" ");
+		line += swprintf(line, end - line, L"%*.*s",
+				pane->w, pane->w, L" ");
+
+		pane_clearln(pane, 1);
 		mvwaddwstr(pane->win, 1, 0, linebuf);
 	}
 
 	if (sel || cmd_show) {
+		/* cmd and search input */
 		line = linebuf;
 
 		cmd = history->cmd;
@@ -818,8 +848,8 @@ cmd_vis(struct pane *pane, int sel)
 		offset = wcslen(linebuf);
 
 		line += swprintf(line, end - line, L"%ls", cmd->buf);
-		line += swprintf(line, end - line, L"%*s", pane->w, L" ");
 
+		pane_clearln(pane, 2);
 		mvwaddwstr(pane->win, 2, 0, linebuf);
 
 		if (sel) { /* show cursor in text */
@@ -837,7 +867,7 @@ queue_hover(void)
 {
 	struct link *link;
 
-	link = link_iter(playlist.next, track_nav.sel);
+	link = link_iter(player->playlist.next, track_nav.sel);
 	ASSERT(link != NULL);
 	player_queue_append(UPCAST(link, struct ref)->data);
 }
@@ -860,11 +890,7 @@ main_input(wint_t c)
 		break;
 	case KEY_RIGHT:
 		if (!player->loaded) break;
-		if (player->time_end > player->time_pos + 10) {
-			player_seek(player->time_pos + 10);
-		} else {
-			player_next();
-		}
+		player_seek(MIN(player->time_pos + 10, player->time_end));
 		break;
 	case L'y':
 		queue_hover();
@@ -884,16 +910,15 @@ main_input(wint_t c)
 		player_prev();
 		break;
 	case L'w':
-		autoplay ^= 1;
+		player->autoplay ^= 1;
 		break;
 	case L'g':
-		player->next = NULL;
-		shuffle ^= 1;
+		player->shuffle ^= 1;
 		break;
 	case L'b':
 		player_seek(0);
 		break;
-	case L's':
+	case L'x':
 		if (player->state == PLAYER_STATE_PLAYING) {
 			player_stop();
 		} else {
@@ -949,43 +974,6 @@ usercmd_save(const wchar_t *args)
 	return 0;
 }
 
-void
-update_player(void)
-{
-	static struct track *first = NULL;
-	struct track *track;
-	struct link *iter;
-	int index;
-
-	player_update();
-
-	if (list_empty(&playlist)) first = NULL;
-
-	/* dont start autoplay before the first song was chosen */
-	if (!player->next && first) {
-		iter = NULL;
-		if (shuffle) {
-			/* TODO better algorithm for random sequence */
-			index = rand() % list_len(&playlist);
-			iter = link_iter(playlist.next, index);
-			ASSERT(iter != NULL);
-		} else if (player->loaded) {
-			iter = playlist.next;
-			for (; iter; iter = iter->next) {
-				track = UPCAST(iter, struct ref)->data;
-				if (track == player->track)
-					break;
-			}
-			iter = iter->next;
-		}
-		if (!iter) iter = playlist.next;
-
-		player->next = UPCAST(iter, struct ref)->data;
-	} else {
-		first = player->track;
-	}
-}
-
 int
 main(int argc, const char **argv)
 {
@@ -996,7 +984,7 @@ main(int argc, const char **argv)
 
 	c = KEY_RESIZE;
 	do {
-		update_player();
+		player_update();
 
 		if (c == KEY_RESIZE) {
 			tui_resize();

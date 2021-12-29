@@ -63,10 +63,17 @@ player_init(void)
 
 	player->queue = LIST_HEAD;
 	player->history = LIST_HEAD;
+
+	player->playlist = LIST_HEAD;
+
 	player->track = NULL;
 	player->state = PLAYER_STATE_PAUSED;
 
-	player->next = NULL;
+	player->autoplay = 0;
+
+	player->shuffle = 0;
+
+	player->action = PLAYER_ACTION_NONE;
 
 	player->seek_delay = 0;
 
@@ -93,12 +100,57 @@ player_free(void)
 }
 
 void
+player_play_next(struct track *prev)
+{
+	struct link *iter;
+	struct track *track;
+	int index;
+
+	if (list_empty(&player->playlist))
+		return;
+
+	if (player->shuffle) {
+		/* TODO better algorithm for random sequence */
+		index = rand() % list_len(&player->playlist);
+		iter = link_iter(player->playlist.next, index);
+		ASSERT(iter != NULL);
+	} else if (player->loaded) {
+		iter = player->playlist.next;
+		for (; iter; iter = iter->next) {
+			track = UPCAST(iter, struct ref)->data;
+			if (track == prev)
+				break;
+		}
+		if (iter) iter = iter->next;
+	}
+
+	if (!iter) iter = player->playlist.next;
+	track = UPCAST(iter, struct ref)->data;
+
+	player_play_track(track);
+}
+
+void
 player_update(void)
 {
 	struct mpd_status *status;
 	struct mpd_song *song;
 	struct ref *ref;
 	const char *tmp;
+
+	status = mpd_run_status(player->conn);
+	ASSERT(status != NULL);
+
+	if (!mpd_run_current_song(player->conn)) {
+		/* if autoplay and another track just finished,
+		 * or there are tracks in queue to be played */
+		if (player->track && player->autoplay
+				|| !list_empty(&player->queue)) {
+			player->action = PLAYER_ACTION_PLAY_NEXT;
+		}
+	}
+
+	free(status);
 
 	if (player->action != PLAYER_ACTION_NONE) {
 		handle_mpd_status(mpd_run_clear(player->conn));
@@ -110,6 +162,9 @@ player_update(void)
 				break;
 			ref = UPCAST(list_pop_front(&player->history),
 				struct ref);
+
+			/* TODO keep index instead until new track is played */
+			/* TODO create slimmer player_backend interface */
 
 			/* dont add current song to history */
 			player->track = NULL;
@@ -123,9 +178,8 @@ player_update(void)
 					struct ref);
 				player_play_track(ref->data);
 				ref_free(ref);
-			} else if (player->next) {
-				player_play_track(player->next);
-				player->next = NULL;
+			} else {
+				player_play_next(player->track);
 			}
 			break;
 		default:
@@ -134,8 +188,23 @@ player_update(void)
 		player->action = PLAYER_ACTION_NONE;
 	}
 
+	/* TODO move prev / next handling to own functions */
+
 	status = mpd_run_status(player->conn);
 	ASSERT(status != NULL);
+
+	song = mpd_run_current_song(player->conn);
+	if (song) {
+		player->loaded = true;
+		player->time_pos = mpd_status_get_elapsed_time(status);
+		player->time_end = mpd_song_get_duration(song);
+		mpd_song_free(song);
+	} else {
+		player->track = NULL;
+		player->loaded = false;
+		player->time_pos = 0;
+		player->time_end = 0;
+	}
 
 	switch (mpd_status_get_state(status)) {
 	case MPD_STATE_PAUSE:
@@ -158,18 +227,6 @@ player_update(void)
 			player_play();
 	}
 
-	song = mpd_run_current_song(player->conn);
-	if (song) {
-		player->loaded = true;
-		player->time_pos = mpd_status_get_elapsed_time(status);
-		player->time_end = mpd_song_get_duration(song);
-		mpd_song_free(song);
-	} else {
-		player->track = NULL;
-		player->loaded = false;
-		player->time_pos = 0;
-		player->time_end = 0;
-	}
 
 	mpd_status_free(status);
 }
@@ -213,22 +270,22 @@ player_play_track(struct track *track)
 	struct link *link;
 	int status;
 
-	player->next = NULL;
 	if (player->track && player->track != track) {
 		list_push_front(&player->history,
 			LINK(ref_init(player->track)));
 	}
 
-	player->track = track;
 	handle_mpd_status(mpd_run_clear(player->conn));
 
-	status = mpd_run_add(player->conn, player->track->fpath);
+	status = mpd_run_add(player->conn, track->fpath);
 	if (handle_mpd_status(status))
 		return PLAYER_ERR;
 
 	status = mpd_run_play(player->conn);
 	if (handle_mpd_status(status))
 		return PLAYER_ERR;
+
+	player->track = track;
 
 	return PLAYER_OK;
 }

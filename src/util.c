@@ -41,10 +41,17 @@ done:
 }
 
 void
-panic(const char *msg, const char *file, int line)
+panic(const char *file, int line, const char *msg, ...)
 {
+	va_list ap;
+
 	endwin();
-	fprintf(stderr, "Panic at %s:%i (%s)\n", file, line, msg);
+	fprintf(stderr, "Panic at %s:%i (", file, line);
+	va_start(ap, msg);
+	vfprintf(stderr, msg, ap);
+	va_end(ap);
+	fprintf(stderr, ")\n");
+
 	exit(1);
 }
 

@@ -36,8 +36,13 @@ struct player {
 	/* TODO move implementation details to source file */
 	struct mpd_connection *conn;
 
+	/* TODO combine with index */
+	/* for navigating forward and backwards in time */
 	struct link queue;
 	struct link history;
+
+	/* list of track refs to choose from on prev / next */
+	struct link playlist;
 
 	/* last player track */
 	struct track *track;
@@ -49,14 +54,10 @@ struct player {
 	/* stopped, paused or playing */
 	int state;
 
-	/* TODO: replace with JIT solution */
-	/* track to play when queue is empty
-	 * and player_next is called */
-	struct track *next;
-
-	/* automatically start playing player->next
-	 * when queue is empty */
+	/* automatically select new tracks when queue empty */
 	int autoplay;
+
+	int shuffle;
 
 	int action;
 

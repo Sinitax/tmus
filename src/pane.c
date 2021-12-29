@@ -29,6 +29,16 @@ pane_resize(struct pane *pane, int sx, int sy, int ex, int ey)
 }
 
 void
+pane_clearln(struct pane *pane, int y)
+{
+	int i;
+
+	wmove(pane->win, y, 0);
+	for (i = 0; i < pane->w; i++)
+		waddch(pane->win, ' ');
+}
+
+void
 pane_free(struct pane *pane)
 {
 	delwin(pane->win);
