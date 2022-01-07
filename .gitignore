@@ -5,3 +5,5 @@ env.sh
 todo
 build
 *.gch
+.cache
+log

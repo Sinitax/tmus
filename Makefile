@@ -1,6 +1,6 @@
-CFLAGS = -I src -g
-LDLIBS = -lcurses -lreadline -lmpdclient
-DEPFLAGS =  -MT $@ -MMD -MP -MF build/$*.d
+CFLAGS = -I src -g $(shell pkg-config --cflags glib-2.0 dbus-1)
+LDLIBS = -lcurses -lmpdclient $(shell pkg-config --libs glib-2.0 dbus-1)
+DEPFLAGS = -MT $@ -MMD -MP -MF build/$*.d
 
 SRCS = $(wildcard src/*.c)
 OBJS = $(SRCS:src/%.c=build/%.o)

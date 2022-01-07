@@ -109,6 +109,7 @@ player_play_next(struct track *prev)
 	if (list_empty(&player->playlist))
 		return;
 
+	iter = NULL;
 	if (player->shuffle) {
 		/* TODO better algorithm for random sequence */
 		index = rand() % list_len(&player->playlist);

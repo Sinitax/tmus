@@ -3,6 +3,8 @@
 
 #include "util.h"
 #include "list.h"
+#include "log.h"
+#include "mpris.h"
 #include "history.h"
 #include "tag.h"
 #include "pane.h"
@@ -107,10 +109,9 @@ static void init(void);
 static void cleanup(int code, void *arg);
 
 static void tui_init(void);
+static void tui_ncurses_init(void);
 static void tui_resize(void);
 static void tui_end(void);
-
-static void ncurses_init(void);
 
 static void data_load(void);
 static void data_save(void);
@@ -152,14 +153,14 @@ void
 init(void)
 {
 	setlocale(LC_ALL, "");
+	srand(time(NULL));
 	quit = 0;
-
-	signal(SIGINT, exit);
-	on_exit(cleanup, NULL);
 
 	history_init(&search_history);
 	history_init(&command_history);
 	history = &command_history;
+
+	log_init();
 
 	data_load();
 
@@ -167,19 +168,27 @@ init(void)
 
 	tui_init();
 
+	dbus_init();
+
 	listnav_init(&tag_nav);
 	listnav_init(&track_nav);
+
+	on_exit(cleanup, NULL);
+	signal(SIGINT, exit);
 }
 
 void
-cleanup(int code, void* arg)
+cleanup(int exitcode, void* arg)
 {
 	tui_end();
 
-	if (code == EXIT_SUCCESS)
-		data_save();
+	if (!exitcode) data_save();
 
 	player_free();
+
+	dbus_end();
+
+	log_end();
 
 	history_free(&search_history);
 	history_free(&command_history);
@@ -188,7 +197,7 @@ cleanup(int code, void* arg)
 void
 tui_init(void)
 {
-	ncurses_init();
+	tui_ncurses_init();
 
 	memset(style_attrs, 0, sizeof(style_attrs));
 	style_init(STYLE_DEFAULT, COLOR_WHITE, COLOR_BLACK, 0);
@@ -205,6 +214,32 @@ tui_init(void)
 
 	pane_sel = &pane_left;
 	pane_top_sel = pane_sel;
+}
+
+void
+tui_ncurses_init(void)
+{
+	initscr();
+
+	/* do most of the handling ourselves,
+	 * enable special keys */
+	raw();
+	noecho();
+	keypad(stdscr, TRUE);
+
+	/* update screen occasionally for things like
+	 * time even when no input was received */
+	halfdelay(1);
+
+	/* inits COLOR and COLOR_PAIRS used by styles */
+	start_color();
+
+	/* dont show cursor */
+	curs_set(0);
+
+	/* we use ESC deselecting the current pane
+	 * and not for escape sequences, so dont wait */
+	ESCDELAY = 0;
 }
 
 void
@@ -242,32 +277,6 @@ tui_end(void)
 	pane_free(&pane_bot);
 
 	if (!isendwin()) endwin();
-}
-
-void
-ncurses_init(void)
-{
-	initscr();
-
-	/* do most of the handling ourselves,
-	 * enable special keys */
-	raw();
-	noecho();
-	keypad(stdscr, TRUE);
-
-	/* update screen occasionally for things like
-	 * time even when no input was received */
-	halfdelay(1);
-
-	/* inits COLOR and COLOR_PAIRS used by styles */
-	start_color();
-
-	/* dont show cursor */
-	curs_set(0);
-
-	/* we use ESC deselecting the current pane
-	 * and not for escape sequences, so dont wait */
-	ESCDELAY = 0;
 }
 
 void
@@ -567,6 +576,7 @@ track_pane_input(wint_t c)
 		listnav_update_sel(&track_nav, track_nav.sel + 1);
 		return 1;
 	case KEY_ENTER:
+		if (list_empty(&player->playlist)) return 1;
 		link = link_iter(player->playlist.next, track_nav.sel);
 		ASSERT(link != NULL);
 		track = UPCAST(link, struct ref)->data;
@@ -805,14 +815,6 @@ cmd_pane_vis(struct pane *pane, int sel)
 				list_len(&player->queue));
 		}
 
-		if (player->autoplay) {
-			line += swprintf(line, end - line, L" | AUTOPLAY");
-		}
-
-		if (player->shuffle) {
-			line += swprintf(line, end - line, L" | SHUFFLE");
-		}
-
 		ATTR_ON(pane->win, A_REVERSE);
 		pane_clearln(pane, 1);
 		mvwaddwstr(pane->win, 1, 0, linebuf);
@@ -827,6 +829,13 @@ cmd_pane_vis(struct pane *pane, int sel)
 		pane_clearln(pane, 1);
 		mvwaddwstr(pane->win, 1, 0, linebuf);
 	}
+
+	/* status bits on right of status line */
+	if (player->loaded) ATTR_ON(pane->win, A_REVERSE);
+	mvwaddstr(pane->win, 1, pane->w - 4, "[  ]");
+	if (player->autoplay) mvwaddstr(pane->win, 1, pane->w - 3, "A");
+	if (player->shuffle) mvwaddstr(pane->win, 1, pane->w - 2, "S");
+	if (player->loaded) ATTR_OFF(pane->win, A_REVERSE);
 
 	if (sel || cmd_show) {
 		/* cmd and search input */
@@ -984,6 +993,7 @@ main(int argc, const char **argv)
 
 	c = KEY_RESIZE;
 	do {
+		dbus_update();
 		player_update();
 
 		if (c == KEY_RESIZE) {
