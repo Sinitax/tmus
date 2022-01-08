@@ -1,3 +1,4 @@
+#include "ref.h"
 #include "track.h"
 
 #include <wchar.h>
@@ -12,21 +13,21 @@ track_init(const char *dir, const char *fname)
 	struct stat info;
 
 	track = malloc(sizeof(struct track));
-
 	ASSERT(track != NULL);
+
 	track->fname = strdup(fname);
 	ASSERT(track->fname != NULL);
+
 	track->fpath = aprintf("%s/%s", dir, fname);
 	ASSERT(track->fpath != NULL);
+
 	track->name = calloc(strlen(track->fname) + 1, sizeof(wchar_t));
 	ASSERT(track->name != NULL);
 	mbstowcs(track->name, track->fname, strlen(track->fname) + 1);
 
-	if (!stat(track->fpath, &info)) {
+	track->fid = -1;
+	if (!stat(track->fpath, &info))
 		track->fid = info.st_ino;
-	} else {
-		track->fid = -1;
-	}
 
 	track->tags = LIST_HEAD;
 
@@ -39,4 +40,8 @@ track_free(struct track *t)
 	free(t->fname);
 	free(t->fpath);
 	free(t->name);
+
+	refs_free(&t->tags);
+
+	free(t);
 }

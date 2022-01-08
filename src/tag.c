@@ -34,5 +34,8 @@ tag_free(struct tag *tag)
 	free(tag->fname);
 	free(tag->fpath);
 	free(tag->name);
+
 	refs_free(&tag->tracks);
+
+	free(tag);
 }

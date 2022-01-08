@@ -1,9 +1,7 @@
 vgcore*
-tmus
-env.sh
-*.o
-todo
 build
+tmus
+todo
 *.gch
 .cache
-log
+log*

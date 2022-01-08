@@ -92,8 +92,12 @@ player_free(void)
 
 	if (!player->conn) return;
 
-	refs_free(&player->history);
 	refs_free(&player->queue);
+	refs_free(&player->history);
+
+	refs_free(&player->playlist);
+
+	player_clear_msg();
 
 	//mpd_run_clear(player->conn);
 	mpd_connection_free(player->conn);
@@ -142,7 +146,8 @@ player_update(void)
 	status = mpd_run_status(player->conn);
 	ASSERT(status != NULL);
 
-	if (!mpd_run_current_song(player->conn)) {
+	song = mpd_run_current_song(player->conn);
+	if (!song) {
 		/* if autoplay and another track just finished,
 		 * or there are tracks in queue to be played */
 		if (player->track && player->autoplay
@@ -150,8 +155,9 @@ player_update(void)
 			player->action = PLAYER_ACTION_PLAY_NEXT;
 		}
 	}
+	mpd_song_free(song);
 
-	free(status);
+	mpd_status_free(status);
 
 	if (player->action != PLAYER_ACTION_NONE) {
 		handle_mpd_status(mpd_run_clear(player->conn));
@@ -199,13 +205,13 @@ player_update(void)
 		player->loaded = true;
 		player->time_pos = mpd_status_get_elapsed_time(status);
 		player->time_end = mpd_song_get_duration(song);
-		mpd_song_free(song);
 	} else {
-		player->track = NULL;
 		player->loaded = false;
+		player->track = NULL;
 		player->time_pos = 0;
 		player->time_end = 0;
 	}
+	mpd_song_free(song);
 
 	switch (mpd_status_get_state(status)) {
 	case MPD_STATE_PAUSE:

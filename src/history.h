@@ -16,7 +16,7 @@ struct inputln {
 
 struct history {
 	struct link list;
-	struct inputln *cmd, *query;
+	struct inputln *sel, *input;
 };
 
 void history_init(struct history *history);
@@ -28,7 +28,6 @@ void history_prev(struct history *history);
 void history_next(struct history *history);
 
 void history_add(struct history *history, struct inputln *line);
-void history_pop(struct inputln *line);
 
 struct inputln *inputln_init(void);
 void inputln_free(struct inputln *ln);

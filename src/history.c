@@ -9,43 +9,47 @@ void
 history_init(struct history *history)
 {
 	history->list = LIST_HEAD;
-	history->query = inputln_init();
-	history->cmd = history->query;
+	history->input = inputln_init();
+	history->sel = history->input;
 }
 
 void
 history_submit(struct history *history)
 {
-	/* if chose from history free query */
-	if (history->cmd != history->query) {
-		history_pop(history->query);
-		inputln_free(history->query);
+	/* if chose from history free input */
+	if (history->sel != history->input) {
+		link_pop(LINK(history->input));
+		inputln_free(history->input);
 	}
 
 	/* pop first in case already in history */
-	history_pop(history->cmd);
-	history_add(history, history->cmd);
+	link_pop(LINK(history->sel));
+	history_add(history, history->sel);
 
 	/* create new input buf and add to hist */
-	history->query = inputln_init();
-	history->cmd = history->query;
-	history_add(history, history->cmd);
+	history->input = inputln_init();
+	history->sel = history->input;
+	history_add(history, history->sel);
 }
 
 void
 history_free(struct history *history)
 {
 	struct link *iter, *next;
-	struct inputln *ln;
+	struct link *ln;
 
-	for (iter = history->list.next; iter; iter = next) {
+	ln = link_pop(LINK(history->input));
+	inputln_free(UPCAST(ln, struct inputln));
+
+	for (iter = history->list.next; iter; ) {
 		next = iter->next;
-		ln = UPCAST(iter, struct inputln);
-		free(ln);
+		inputln_free(UPCAST(iter, struct inputln));
+		iter = next;
 	}
+
 	history->list = LIST_HEAD;
-	history->query = NULL;
-	history->cmd = NULL;
+	history->input = NULL;
+	history->sel = NULL;
 }
 
 struct inputln *
@@ -60,7 +64,7 @@ history_list_prev(struct inputln *cur, const wchar_t *search)
 			return ln;
 	}
 
-	return NULL;
+	return cur;
 }
 
 struct inputln *
@@ -81,20 +85,13 @@ history_list_next(struct inputln *cur, const wchar_t *search)
 void
 history_prev(struct history *history)
 {
-	history->cmd = history_list_prev(history->cmd, history->query->buf);
-	if (!history->cmd) history->cmd = history->query;
+	history->sel = history_list_prev(history->sel, history->input->buf);
 }
 
 void
 history_next(struct history *history)
 {
-	history->cmd = history_list_next(history->cmd, history->query->buf);
-}
-
-void
-history_pop(struct inputln *line)
-{
-	link_pop(&line->link);
+	history->sel = history_list_next(history->sel, history->input->buf);
 }
 
 void
@@ -105,13 +102,11 @@ history_add(struct history *history, struct inputln *line)
 
 	if (list_len(&history->list) == HISTORY_MAX) {
 		/* pop last item to make space */
-		back = link_back(&history->list);
-		back->prev->next = NULL;
-		ln = UPCAST(back, struct inputln);
-		inputln_free(ln);
+		back = link_pop(link_back(&history->list));
+		inputln_free(UPCAST(back, struct inputln));
 	}
 
-	link_append(&history->list, &line->link);
+	list_push_front(&history->list, LINK(line));
 }
 
 struct inputln *
@@ -141,15 +136,15 @@ inputln_free(struct inputln *ln)
 }
 
 void
-inputln_left(struct inputln *cmd)
+inputln_left(struct inputln *ln)
 {
-	cmd->cur = MAX(0, cmd->cur-1);
+	ln->cur = MAX(0, ln->cur-1);
 }
 
 void
-inputln_right(struct inputln *cmd)
+inputln_right(struct inputln *ln)
 {
-	cmd->cur = MIN(cmd->len, cmd->cur+1);
+	ln->cur = MIN(ln->len, ln->cur+1);
 }
 
 void
@@ -208,6 +203,7 @@ inputln_copy(struct inputln *dst, struct inputln *src)
 void
 inputln_replace(struct inputln *line, const wchar_t *str)
 {
+	free(line->buf);
 	line->buf = wcsdup(str);
 	ASSERT(line->buf != NULL);
 	line->len = wcslen(str);

@@ -183,6 +183,7 @@ cleanup(int exitcode, void* arg)
 	tui_end();
 
 	if (!exitcode) data_save();
+	data_free();
 
 	player_free();
 
@@ -319,7 +320,26 @@ data_save(void)
 void
 data_free(void)
 {
-	/* TODO free track info */
+	struct link *track_link;
+	struct link *tag_link;
+	struct tag *tag;
+
+	log_info("MAIN: data_free()\n");
+
+	refs_free(&tracks);
+	refs_free(&tags_sel);
+
+	while (!list_empty(&tags)) {
+		tag_link = list_pop_front(&tags);
+
+		tag = UPCAST(tag_link, struct tag);
+		while (!list_empty(&tag->tracks)) {
+			track_link = list_pop_front(&tag->tracks);
+			track_free(UPCAST(track_link, struct ref)->data);
+			ref_free(UPCAST(track_link, struct ref));
+		}
+		tag_free(tag);
+	}
 }
 
 void
@@ -343,7 +363,6 @@ tracks_load(struct tag *tag)
 
 		track = track_init(tag->fpath, ent->d_name);
 
-		track->tags = LIST_HEAD;
 		ref = ref_init(tag);
 		ASSERT(ref != NULL);
 		list_push_back(&track->tags, LINK(ref));
@@ -363,7 +382,6 @@ tracks_load(struct tag *tag)
 			ASSERT(ref != NULL);
 			list_push_back(&tracks, LINK(ref));
 		}
-
 	}
 	closedir(dir);
 }
@@ -466,6 +484,7 @@ toggle_current_tag(void)
 	struct ref *ref;
 	int in_tags, in_playlist;
 
+	if (list_empty(&tags)) return;
 	link = link_iter(tags.next, tag_nav.sel);
 	ASSERT(link != NULL);
 	tag = UPCAST(link, struct tag);
@@ -688,19 +707,19 @@ cmd_pane_input(wint_t c)
 
 	switch (c) {
 	case KEY_ESC:
-		if (history->cmd == history->query)
+		if (history->sel == history->input)
 			pane_sel = pane_top_sel;
 		else
-			history->cmd = history->query;
+			history->sel = history->input;
 		break;
 	case KEY_LEFT:
-		inputln_left(history->cmd);
+		inputln_left(history->sel);
 		break;
 	case KEY_RIGHT:
-		inputln_right(history->cmd);
+		inputln_right(history->sel);
 		break;
 	case KEY_CTRL('w'):
-		inputln_del(history->cmd, history->cmd->cur);
+		inputln_del(history->sel, history->sel->cur);
 		break;
 	case KEY_UP:
 		history_next(history);
@@ -709,15 +728,15 @@ cmd_pane_input(wint_t c)
 		history_prev(history);
 		break;
 	case KEY_ENTER:
-		if (!*history->cmd->buf) {
+		if (!*history->sel->buf) {
 			pane_sel = pane_top_sel;
 			break;
 		}
 
 		if (cmd_mode == IMODE_EXECUTE) {
-			run_cmd(history->cmd->buf);
+			run_cmd(history->sel->buf);
 		} else if (cmd_mode == IMODE_SEARCH) {
-			play_track(history->cmd->buf);
+			play_track(history->sel->buf);
 		}
 
 		history_submit(history);
@@ -725,32 +744,32 @@ cmd_pane_input(wint_t c)
 		break;
 	case KEY_TAB:
 	case KEY_BTAB:
-		if (history->cmd != history->query) {
-			inputln_copy(history->query, history->cmd);
-			history->cmd = history->query;
+		if (history->sel != history->input) {
+			inputln_copy(history->input, history->sel);
+			history->sel = history->input;
 		}
 
 		if (completion_reset)
-			inputln_copy(&completion_query, history->query);
+			inputln_copy(&completion_query, history->input);
 
 		res = completion(completion_query.buf,
 			c == KEY_TAB, completion_reset);
-		if (res) inputln_replace(history->query, res);
+		if (res) inputln_replace(history->input, res);
 		free(res);
 
 		completion_reset = 0;
 		break;
 	case KEY_BACKSPACE:
-		if (history->cmd->cur == 0) {
+		if (history->sel->cur == 0) {
 			pane_sel = pane_top_sel;
 			break;
 		}
-		inputln_del(history->cmd, 1);
+		inputln_del(history->sel, 1);
 		completion_reset = 1;
 		break;
 	default:
 		if (!iswprint(c)) return 0;
-		inputln_addch(history->cmd, c);
+		inputln_addch(history->sel, c);
 		completion_reset = 1;
 		break;
 	}
@@ -841,8 +860,8 @@ cmd_pane_vis(struct pane *pane, int sel)
 		/* cmd and search input */
 		line = linebuf;
 
-		cmd = history->cmd;
-		if (cmd != history->query) {
+		cmd = history->sel;
+		if (cmd != history->input) {
 			index = 0;
 			iter = history->list.next;
 			for (; iter; iter = iter->next, index++)
