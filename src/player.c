@@ -41,13 +41,13 @@ handle_mpd_status(int status)
 	case MPD_ERROR_SERVER:
 	case MPD_ERROR_ARGUMENT:
 		if (!mpd_connection_clear_error(player->conn))
-			PANIC("Player failed to recover from error");
+			PANIC("PLAYER: Failed to recover from argument error");
 	case MPD_ERROR_SYSTEM:
 		PLAYER_STATUS(PLAYER_MSG_ERR, "%s",
 			mpd_connection_get_error_message(player->conn));
 		return 1;
 	case MPD_ERROR_CLOSED:
-		PANIC("Player encountered non-recoverable error");
+		PANIC("PLAYER: Connection abruptly closed");
 	}
 	return 0;
 }
@@ -67,6 +67,7 @@ player_init(void)
 	player->playlist = LIST_HEAD;
 
 	player->track = NULL;
+	player->loaded = 0;
 	player->state = PLAYER_STATE_PAUSED;
 
 	player->autoplay = 0;
@@ -154,8 +155,9 @@ player_update(void)
 				|| !list_empty(&player->queue)) {
 			player->action = PLAYER_ACTION_PLAY_NEXT;
 		}
+	} else {
+		mpd_song_free(song);
 	}
-	mpd_song_free(song);
 
 	mpd_status_free(status);
 
@@ -205,13 +207,13 @@ player_update(void)
 		player->loaded = true;
 		player->time_pos = mpd_status_get_elapsed_time(status);
 		player->time_end = mpd_song_get_duration(song);
+		mpd_song_free(song);
 	} else {
 		player->loaded = false;
 		player->track = NULL;
 		player->time_pos = 0;
 		player->time_end = 0;
 	}
-	mpd_song_free(song);
 
 	switch (mpd_status_get_state(status)) {
 	case MPD_STATE_PAUSE:

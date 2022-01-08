@@ -87,6 +87,8 @@ static struct pane *const panes[] = {
 static struct link tracks;
 static struct link tags;
 static struct link tags_sel;
+static struct link *tracks_vis;
+static int track_show_playlist;
 
 /* bottom 'cmd' pane for search / exec */
 static struct pane *cmd_pane;
@@ -140,6 +142,7 @@ static int cmd_pane_input(wint_t c);
 static void cmd_pane_vis(struct pane *pane, int sel);
 
 static void queue_hover(void);
+static void update_track_playlist(void);
 static void main_input(wint_t c);
 static void main_vis(void);
 
@@ -172,6 +175,9 @@ init(void)
 
 	listnav_init(&tag_nav);
 	listnav_init(&track_nav);
+
+	track_show_playlist = 0;
+	update_track_playlist();
 
 	on_exit(cleanup, NULL);
 	signal(SIGINT, exit);
@@ -252,11 +258,11 @@ tui_resize(void)
 	getmaxyx(stdscr, scrh, scrw);
 
 	/* guarantee a minimum terminal size */
-	if (scrw < 10 || scrh < 4) {
+	while (scrw < 10 || scrh < 4) {
 		clear();
-		printw("...");
 		refresh();
 		usleep(10000);
+		getmaxyx(stdscr, scrh, scrw);
 	}
 
 	/* adjust tag pane width to name lengths */
@@ -309,6 +315,8 @@ data_load(void)
 		tracks_load(tag);
 	}
 	closedir(dir);
+
+	ASSERT(!list_empty(&tags));
 }
 
 void
@@ -595,8 +603,8 @@ track_pane_input(wint_t c)
 		listnav_update_sel(&track_nav, track_nav.sel + 1);
 		return 1;
 	case KEY_ENTER:
-		if (list_empty(&player->playlist)) return 1;
-		link = link_iter(player->playlist.next, track_nav.sel);
+		if (list_empty(tracks_vis)) return 1;
+		link = link_iter(tracks_vis->next, track_nav.sel);
 		ASSERT(link != NULL);
 		track = UPCAST(link, struct ref)->data;
 		player_play_track(track);
@@ -619,16 +627,17 @@ track_pane_vis(struct pane *pane, int sel)
 {
 	struct track *track;
 	struct link *iter;
+	struct tag *tag;
 	int index;
 
 	werase(pane->win);
 	pane_title(pane, "Tracks", sel);
 
-	listnav_update_bounds(&track_nav, 0, list_len(&player->playlist));
+	listnav_update_bounds(&track_nav, 0, list_len(tracks_vis));
 	listnav_update_wlen(&track_nav, pane->h - 1);
 
 	index = 0;
-	for (iter = player->playlist.next; iter; iter = iter->next, index++) {
+	for (iter = tracks_vis->next; iter; iter = iter->next, index++) {
 		track = UPCAST(iter, struct ref)->data;
 
 		if (index < track_nav.wmin) continue;
@@ -851,7 +860,8 @@ cmd_pane_vis(struct pane *pane, int sel)
 
 	/* status bits on right of status line */
 	if (player->loaded) ATTR_ON(pane->win, A_REVERSE);
-	mvwaddstr(pane->win, 1, pane->w - 4, "[  ]");
+	mvwaddstr(pane->win, 1, pane->w - 5, "[   ]");
+	if (track_show_playlist) mvwaddstr(pane->win, 1, pane->w - 4, "P");
 	if (player->autoplay) mvwaddstr(pane->win, 1, pane->w - 3, "A");
 	if (player->shuffle) mvwaddstr(pane->win, 1, pane->w - 2, "S");
 	if (player->loaded) ATTR_OFF(pane->win, A_REVERSE);
@@ -901,6 +911,22 @@ queue_hover(void)
 }
 
 void
+update_track_playlist(void)
+{
+	struct link *iter;
+	struct tag *tag;
+
+	if (track_show_playlist) {
+		tracks_vis = &player->playlist;
+	} else {
+		iter = link_iter(tags.next, tag_nav.sel);
+		ASSERT(iter != NULL);
+		tag = UPCAST(iter, struct tag);
+		tracks_vis = &tag->tracks;
+	}
+}
+
+void
 main_input(wint_t c)
 {
 	switch (c) {
@@ -928,6 +954,9 @@ main_input(wint_t c)
 		break;
 	case L'c':
 		player_toggle_pause();
+		break;
+	case L'P':
+		track_show_playlist ^= 1;
 		break;
 	case L'n':
 	case L'>':
@@ -1025,6 +1054,8 @@ main(int argc, const char **argv)
 			/* fallback if char not handled by pane */
 			if (!handled) main_input(c);
 		}
+
+		update_track_playlist();
 
 		refresh();
 		for (i = 0; i < ARRLEN(panes); i++) {
