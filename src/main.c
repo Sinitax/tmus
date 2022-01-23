@@ -119,7 +119,7 @@ static void data_load(void);
 static void data_save(void);
 static void data_free(void);
 
-static void tracks_load(struct tag *tag);
+static int tracks_load(struct tag *tag);
 static void tracks_save(struct tag *tag);
 
 static void pane_title(struct pane *pane, const char *title, int highlight);
@@ -303,16 +303,16 @@ data_load(void)
 	dir = opendir(datadir);
 	ASSERT(dir != NULL);
 	while ((ent = readdir(dir))) {
-		if (ent->d_type != DT_DIR)
-			continue;
 		if (!strcmp(ent->d_name, "."))
 			continue;
 		if (!strcmp(ent->d_name, ".."))
 			continue;
 
 		tag = tag_init(datadir, ent->d_name);
-		list_push_back(&tags, LINK(tag));
-		tracks_load(tag);
+		if (tracks_load(tag))
+			tag_free(tag);
+		else
+			list_push_back(&tags, LINK(tag));
 	}
 	closedir(dir);
 
@@ -350,7 +350,7 @@ data_free(void)
 	}
 }
 
-void
+int
 tracks_load(struct tag *tag)
 {
 	struct track *track, *track_iter;
@@ -360,13 +360,15 @@ tracks_load(struct tag *tag)
 	DIR *dir;
 
 	dir = opendir(tag->fpath);
-	ASSERT(dir != NULL);
+	if (!dir) return 1;
 	while ((ent = readdir(dir))) {
-		if (ent->d_type != DT_REG)
-			continue;
 		if (!strcmp(ent->d_name, "."))
 			continue;
 		if (!strcmp(ent->d_name, ".."))
+			continue;
+
+		/* skip files without extension */
+		if (!strchr(ent->d_name, '.'))
 			continue;
 
 		track = track_init(tag->fpath, ent->d_name);
@@ -392,6 +394,8 @@ tracks_load(struct tag *tag)
 		}
 	}
 	closedir(dir);
+
+	return 0;
 }
 
 void
