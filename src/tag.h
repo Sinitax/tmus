@@ -4,7 +4,7 @@
 #include "util.h"
 
 struct tag {
-	char *name;
+	wchar_t *name;
 	char *fname, *fpath;
 
 	struct link tracks;

@@ -52,7 +52,9 @@ enum {
 
 enum {
 	IMODE_EXECUTE,
-	IMODE_SEARCH
+	IMODE_TRACK_SEARCH,
+	IMODE_TAG_SEARCH,
+	IMODE_COUNT
 };
 
 typedef wchar_t *(*completion_gen)(const wchar_t *text, int fwd, int state);
@@ -92,11 +94,13 @@ static int track_show_playlist;
 
 /* bottom 'cmd' pane for search / exec */
 static struct pane *cmd_pane;
-static struct history search_history, command_history;
+static struct history command_history;
+static struct history track_search_history;
+static struct history tag_search_history;
 static struct history *history;
 static int cmd_show, cmd_mode;
-static struct inputln completion_query = { 0 };
-static int completion_reset = 1;
+static struct inputln completion_query;
+static int completion_reset;
 static completion_gen completion;
 
 /* left pane for tags */
@@ -138,6 +142,8 @@ static void tag_pane_vis(struct pane *pane, int sel);
 static int track_pane_input(wint_t c);
 static void track_pane_vis(struct pane *pane, int sel);
 
+static int play_track(const wchar_t *name);
+static int select_tag(const wchar_t *name);
 static int cmd_pane_input(wint_t c);
 static void cmd_pane_vis(struct pane *pane, int sel);
 
@@ -147,6 +153,12 @@ static void main_input(wint_t c);
 static void main_vis(void);
 
 static int usercmd_save(const wchar_t *args);
+
+const char imode_prefix[IMODE_COUNT] = {
+	[IMODE_EXECUTE] = ':',
+	[IMODE_TRACK_SEARCH] = '/',
+	[IMODE_TAG_SEARCH] = '?',
+};
 
 const struct cmd cmds[] = {
 	{ L"save", usercmd_save },
@@ -159,7 +171,11 @@ init(void)
 	srand(time(NULL));
 	quit = 0;
 
-	history_init(&search_history);
+	inputln_init(&completion_query);
+	completion_reset = 1;
+
+	history_init(&track_search_history);
+	history_init(&tag_search_history);
 	history_init(&command_history);
 	history = &command_history;
 
@@ -197,7 +213,8 @@ cleanup(int exitcode, void* arg)
 
 	log_end();
 
-	history_free(&search_history);
+	history_free(&track_search_history);
+	history_free(&tag_search_history);
 	history_free(&command_history);
 }
 
@@ -268,7 +285,7 @@ tui_resize(void)
 	/* adjust tag pane width to name lengths */
 	leftw = 0;
 	for (iter = tags.next; iter; iter = iter->next)
-		leftw = MAX(leftw, strlen(UPCAST(iter, struct tag)->name));
+		leftw = MAX(leftw, wcslen(UPCAST(iter, struct tag)->name));
 	leftw = MAX(leftw + 1, 0.2f * scrw);
 
 	pane_resize(&pane_left, 0, 0, leftw, scrh - 3);
@@ -487,6 +504,32 @@ track_name_gen(const wchar_t *text, int fwd, int reset)
 	return NULL;
 }
 
+wchar_t *
+tag_name_gen(const wchar_t *text, int fwd, int reset)
+{
+	static struct link *cur;
+	struct link *iter;
+	struct tag *tag;
+
+	if (reset) {
+		cur = tags.next;
+		iter = cur;
+	} else {
+		iter = fwd ? cur->next : cur->prev;
+	}
+
+	while (iter && iter != &tags) {
+		tag = UPCAST(iter, struct tag);
+		if (wcsstr(tag->name, text)) {
+			cur = iter;
+			return wcsdup(tag->name);
+		}
+		iter = fwd ? iter->next : iter->prev;
+	}
+
+	return NULL;
+}
+
 void
 toggle_current_tag(void)
 {
@@ -580,7 +623,7 @@ tag_pane_vis(struct pane *pane, int sel)
 			style_on(pane->win, STYLE_ITEM_SEL);
 
 		wmove(pane->win, 1 + index - tag_nav.wmin, 0);
-		wprintw(pane->win, "%*.*s", pane->w, pane->w, tag->name);
+		wprintw(pane->win, "%-*.*ls", pane->w, pane->w, tag->name);
 
 		if (sel && index == tag_nav.sel && tsel)
 			style_off(pane->win, STYLE_ITEM_HOVER_SEL);
@@ -706,6 +749,25 @@ play_track(const wchar_t *query)
 }
 
 int
+select_tag(const wchar_t *query)
+{
+	struct tag *tag;
+	struct link *iter;
+	int index;
+
+	index = 0;
+	for (iter = tags.next; iter; iter = iter->next, index++) {
+		tag = UPCAST(iter, struct tag);
+		if (wcsstr(tag->name, query)) {
+			listnav_update_sel(&tag_nav, index);
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+int
 cmd_pane_input(wint_t c)
 {
 	wchar_t *res;
@@ -713,9 +775,12 @@ cmd_pane_input(wint_t c)
 	if (cmd_mode == IMODE_EXECUTE) {
 		history = &command_history;
 		completion = command_name_gen;
-	} else if (cmd_mode == IMODE_SEARCH) {
-		history = &search_history;
+	} else if (cmd_mode == IMODE_TRACK_SEARCH) {
+		history = &track_search_history;
 		completion = track_name_gen;
+	} else if (cmd_mode == IMODE_TAG_SEARCH) {
+		history = &tag_search_history;
+		completion = tag_name_gen;
 	}
 
 	switch (c) {
@@ -748,8 +813,10 @@ cmd_pane_input(wint_t c)
 
 		if (cmd_mode == IMODE_EXECUTE) {
 			run_cmd(history->sel->buf);
-		} else if (cmd_mode == IMODE_SEARCH) {
+		} else if (cmd_mode == IMODE_TRACK_SEARCH) {
 			play_track(history->sel->buf);
+		} else if (cmd_mode == IMODE_TAG_SEARCH) {
+			select_tag(history->sel->buf);
 		}
 
 		history_submit(history);
@@ -885,7 +952,7 @@ cmd_pane_vis(struct pane *pane, int sel)
 				iter ? index : -1);
 		} else {
 			line += swprintf(line, end - line, L"%c",
-				cmd_mode == IMODE_SEARCH ? '/' : ':');
+				imode_prefix[cmd_mode]);
 		}
 		offset = wcslen(linebuf);
 
@@ -959,9 +1026,6 @@ main_input(wint_t c)
 	case L'c':
 		player_toggle_pause();
 		break;
-	case L'P':
-		track_show_playlist ^= 1;
-		break;
 	case L'n':
 	case L'>':
 		player_next();
@@ -970,10 +1034,13 @@ main_input(wint_t c)
 	case L'<':
 		player_prev();
 		break;
-	case L'w':
+	case L'P':
+		track_show_playlist ^= 1;
+		break;
+	case L'A':
 		player->autoplay ^= 1;
 		break;
-	case L'g':
+	case L'S':
 		player->shuffle ^= 1;
 		break;
 	case L'b':
@@ -992,7 +1059,12 @@ main_input(wint_t c)
 		completion_reset = 1;
 		break;
 	case L'/':
-		cmd_mode = IMODE_SEARCH;
+		cmd_mode = IMODE_TRACK_SEARCH;
+		pane_sel = &pane_bot;
+		completion_reset = 1;
+		break;
+	case L'?':
+		cmd_mode = IMODE_TAG_SEARCH;
 		pane_sel = &pane_bot;
 		completion_reset = 1;
 		break;

@@ -8,6 +8,7 @@ struct tag *
 tag_init(const char *path, const char *fname)
 {
 	struct tag *tag;
+	int len;
 
 	tag = malloc(sizeof(struct tag));
 	ASSERT(tag != NULL);
@@ -18,8 +19,11 @@ tag_init(const char *path, const char *fname)
 	tag->fpath = aprintf("%s/%s", path, fname);
 	ASSERT(tag->fpath != NULL);
 
-	tag->name = sanitized(tag->fname);
+	len = mbstowcs(NULL, tag->fname, 0);
+	ASSERT(len > 0);
+	tag->name = calloc(len + 1, sizeof(wchar_t));
 	ASSERT(tag->name != NULL);
+	mbstowcs(tag->name, tag->fname, len + 1);
 
 	tag->link = LINK_EMPTY;
 

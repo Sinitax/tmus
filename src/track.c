@@ -11,6 +11,7 @@ track_init(const char *dir, const char *fname)
 {
 	struct track *track;
 	struct stat info;
+	int len;
 
 	track = malloc(sizeof(struct track));
 	ASSERT(track != NULL);
@@ -21,9 +22,11 @@ track_init(const char *dir, const char *fname)
 	track->fpath = aprintf("%s/%s", dir, fname);
 	ASSERT(track->fpath != NULL);
 
-	track->name = calloc(strlen(track->fname) + 1, sizeof(wchar_t));
+	len = mbstowcs(NULL, track->fname, 0);
+	ASSERT(len >= 0);
+	track->name = calloc(len + 1, sizeof(wchar_t));
 	ASSERT(track->name != NULL);
-	mbstowcs(track->name, track->fname, strlen(track->fname) + 1);
+	mbstowcs(track->name, track->fname, len + 1);
 
 	track->fid = -1;
 	if (!stat(track->fpath, &info))

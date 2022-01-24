@@ -29,7 +29,9 @@ void history_next(struct history *history);
 
 void history_add(struct history *history, struct inputln *line);
 
-struct inputln *inputln_init(void);
+struct inputln *inputln_alloc(void);
+void inputln_init(struct inputln *ln);
+void inputln_resize(struct inputln *ln, size_t size);
 void inputln_free(struct inputln *ln);
 
 void inputln_left(struct inputln *line);

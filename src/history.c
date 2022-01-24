@@ -9,7 +9,7 @@ void
 history_init(struct history *history)
 {
 	history->list = LIST_HEAD;
-	history->input = inputln_init();
+	history->input = inputln_alloc();
 	history->sel = history->input;
 }
 
@@ -27,7 +27,7 @@ history_submit(struct history *history)
 	history_add(history, history->sel);
 
 	/* create new input buf and add to hist */
-	history->input = inputln_init();
+	history->input = inputln_alloc();
 	history->sel = history->input;
 	history_add(history, history->sel);
 }
@@ -109,21 +109,25 @@ history_add(struct history *history, struct inputln *line)
 	list_push_front(&history->list, LINK(line));
 }
 
+void
+inputln_init(struct inputln *ln)
+{
+	ln->buf = NULL;
+	ln->len = 0;
+	ln->cap = 0;
+	ln->cur = 0;
+	ln->link = LINK_EMPTY;
+}
+
 struct inputln *
-inputln_init(void)
+inputln_alloc(void)
 {
 	struct inputln *ln;
 
 	ln = malloc(sizeof(struct inputln));
 	ASSERT(ln != NULL);
-	ln->cap = 128;
-	ln->buf = malloc(ln->cap * sizeof(wchar_t));
-	ASSERT(ln->buf != NULL);
-	ln->len = 0;
-	ln->buf[ln->len] = '\0';
-	ln->cur = 0;
-	ln->link.next = NULL;
-	ln->link.prev = NULL;
+	inputln_init(ln);
+	inputln_resize(ln, 128);
 
 	return ln;
 }
@@ -209,4 +213,16 @@ inputln_replace(struct inputln *line, const wchar_t *str)
 	line->len = wcslen(str);
 	line->cap = line->len + 1;
 	line->cur = line->len;
+}
+
+void
+inputln_resize(struct inputln *ln, size_t size)
+{
+	ASSERT(size != 0);
+
+	ln->cap = size;
+	ln->buf = realloc(ln->buf, ln->cap * sizeof(wchar_t));
+	ASSERT(ln->buf != NULL);
+	ln->len = MIN(ln->len, ln->cap-1);
+	ln->buf[ln->len] = '\0';
 }
