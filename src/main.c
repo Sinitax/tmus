@@ -1001,6 +1001,9 @@ void
 main_input(wint_t c)
 {
 	switch (c) {
+	case KEY_CTRL('r'):
+		redrawwin(stdscr);
+		break;
 	case KEY_TAB:
 		pane_sel = pane_sel == &pane_left
 			? &pane_right : &pane_left;
