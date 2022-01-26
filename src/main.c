@@ -1117,7 +1117,13 @@ main_input(wint_t c)
 		player_prev();
 		break;
 	case L'P':
-		track_show_playlist ^= 1;
+		if (track_show_playlist) {
+			pane_sel = tag_pane;
+			track_show_playlist = 0;
+		} else {
+			pane_sel = track_pane;
+			track_show_playlist = 1;
+		}
 		break;
 	case L'A':
 		player->autoplay ^= 1;
