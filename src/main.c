@@ -683,7 +683,7 @@ tag_pane_vis(struct pane *pane, int sel)
 {
 	struct tag *tag;
 	struct link *iter;
-	int index, tsel;
+	int index, tagsel;
 
 	werase(pane->win);
 	pane_title(pane, "Tags", sel);
@@ -694,31 +694,31 @@ tag_pane_vis(struct pane *pane, int sel)
 	index = 0;
 	for (iter = tags.next; iter; iter = iter->next, index++) {
 		tag = UPCAST(iter, struct tag);
-		tsel = refs_incl(&tags_sel, tag);
+		tagsel = refs_incl(&tags_sel, tag);
 
 		if (index < tag_nav.wmin) continue;
 		if (index >= tag_nav.wmax) break;
 
-		if (sel && index == tag_nav.sel && tsel)
+		if (sel && tagsel && index == tag_nav.sel)
 			style_on(pane->win, STYLE_ITEM_HOVER_SEL);
 		else if (sel && index == tag_nav.sel)
 			style_on(pane->win, STYLE_ITEM_HOVER);
+		else if (tagsel)
+			style_on(pane->win, STYLE_ITEM_SEL);
 		else if (index == tag_nav.sel)
 			style_on(pane->win, STYLE_PREV);
-		else if (tsel)
-			style_on(pane->win, STYLE_ITEM_SEL);
 
 		wmove(pane->win, 1 + index - tag_nav.wmin, 0);
 		wprintw(pane->win, "%-*.*ls", pane->w, pane->w, tag->name);
 
-		if (sel && index == tag_nav.sel && tsel)
+		if (sel && tagsel && index == tag_nav.sel)
 			style_off(pane->win, STYLE_ITEM_HOVER_SEL);
 		else if (sel && index == tag_nav.sel)
 			style_off(pane->win, STYLE_ITEM_HOVER);
+		else if (tagsel)
+			style_off(pane->win, STYLE_ITEM_SEL);
 		else if (index == tag_nav.sel)
 			style_off(pane->win, STYLE_PREV);
-		else if (tsel)
-			style_off(pane->win, STYLE_ITEM_SEL);
 	}
 }
 
@@ -780,10 +780,10 @@ track_pane_vis(struct pane *pane, int sel)
 			style_on(pane->win, STYLE_ITEM_HOVER_SEL);
 		else if (sel && index == track_nav.sel)
 			style_on(pane->win, STYLE_ITEM_HOVER);
-		else if (index == track_nav.sel)
-			style_on(pane->win, STYLE_PREV);
 		else if (track == player->track)
 			style_on(pane->win, STYLE_ITEM_SEL);
+		else if (index == track_nav.sel)
+			style_on(pane->win, STYLE_PREV);
 
 		wmove(pane->win, 1 + index - track_nav.wmin, 0);
 		wprintw(pane->win, "%-*.*ls", pane->w, pane->w, track->name);
@@ -792,10 +792,10 @@ track_pane_vis(struct pane *pane, int sel)
 			style_off(pane->win, STYLE_ITEM_HOVER_SEL);
 		else if (sel && index == track_nav.sel)
 			style_off(pane->win, STYLE_ITEM_HOVER);
-		else if (index == track_nav.sel)
-			style_off(pane->win, STYLE_PREV);
 		else if (track == player->track)
 			style_off(pane->win, STYLE_ITEM_SEL);
+		else if (index == track_nav.sel)
+			style_off(pane->win, STYLE_PREV);
 	}
 }
 
