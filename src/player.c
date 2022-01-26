@@ -145,7 +145,11 @@ player_update(void)
 	const char *tmp;
 
 	status = mpd_run_status(player->conn);
-	ASSERT(status != NULL);
+	if (status == NULL) {
+		fprintf(stderr, "MPD Fatal Error: %s\n",
+			mpd_connection_get_error_message(player->conn));
+		exit(1);
+	}
 
 	song = mpd_run_current_song(player->conn);
 	if (!song) {
@@ -200,7 +204,11 @@ player_update(void)
 	/* TODO move prev / next handling to own functions */
 
 	status = mpd_run_status(player->conn);
-	ASSERT(status != NULL);
+	if (status == NULL) {
+		fprintf(stderr, "MPD Fatal Error: %s\n",
+			mpd_connection_get_error_message(player->conn));
+		exit(1);
+	}
 
 	song = mpd_run_current_song(player->conn);
 	if (song) {

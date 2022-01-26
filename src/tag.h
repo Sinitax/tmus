@@ -7,6 +7,8 @@ struct tag {
 	wchar_t *name;
 	char *fname, *fpath;
 
+	char *new_fname;
+
 	struct link tracks;
 
 	struct link link;

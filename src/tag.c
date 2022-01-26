@@ -16,6 +16,8 @@ tag_init(const char *path, const char *fname)
 	tag->fname = strdup(fname);
 	ASSERT(tag->fname != NULL);
 
+	tag->new_fname = NULL;
+
 	tag->fpath = aprintf("%s/%s", path, fname);
 	ASSERT(tag->fpath != NULL);
 

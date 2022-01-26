@@ -7,10 +7,9 @@
 
 
 struct track *
-track_init(const char *dir, const char *fname)
+track_init(const char *dir, const char *fname, int fid)
 {
 	struct track *track;
-	struct stat info;
 	int len;
 
 	track = malloc(sizeof(struct track));
@@ -28,9 +27,7 @@ track_init(const char *dir, const char *fname)
 	ASSERT(track->name != NULL);
 	mbstowcs(track->name, track->fname, len + 1);
 
-	track->fid = -1;
-	if (!stat(track->fpath, &info))
-		track->fid = info.st_ino;
+	track->fid = fid;
 
 	track->tags = LIST_HEAD;
 

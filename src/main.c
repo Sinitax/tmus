@@ -123,7 +123,8 @@ static void data_load(void);
 static void data_save(void);
 static void data_free(void);
 
-static int tracks_load(struct tag *tag);
+static void index_update(struct tag *tag);
+static void tracks_load(struct tag *tag);
 static void tracks_save(struct tag *tag);
 
 static void pane_title(struct pane *pane, const char *title, int highlight);
@@ -202,7 +203,7 @@ init(void)
 void
 cleanup(int exitcode, void* arg)
 {
-	tui_end();
+	if (!exitcode) tui_end();
 
 	if (!exitcode) data_save();
 	data_free();
@@ -308,6 +309,8 @@ data_load(void)
 {
 	struct dirent *ent;
 	struct tag *tag;
+	struct stat st;
+	char *path;
 	DIR *dir;
 
 	tracks = LIST_HEAD;
@@ -325,11 +328,16 @@ data_load(void)
 		if (!strcmp(ent->d_name, ".."))
 			continue;
 
-		tag = tag_init(datadir, ent->d_name);
-		if (tracks_load(tag))
-			tag_free(tag);
-		else
+		path = aprintf("%s/%s", datadir, ent->d_name);
+		ASSERT(path != NULL);
+
+		if (!stat(path, &st) && S_ISDIR(st.st_mode)) {
+			tag = tag_init(datadir, ent->d_name);
+			tracks_load(tag);
 			list_push_back(&tags, LINK(tag));
+		}
+
+		free(path);
 	}
 	closedir(dir);
 
@@ -367,28 +375,87 @@ data_free(void)
 	}
 }
 
-int
-tracks_load(struct tag *tag)
+void
+index_update(struct tag *tag)
 {
 	struct track *track, *track_iter;
 	struct dirent *ent;
 	struct link *iter;
 	struct ref *ref;
+	struct stat st;
+	char *path;
+	FILE *file;
 	DIR *dir;
+	int fid;
+
+	path = aprintf("%s/index", tag->fpath);
+	ASSERT(path != NULL);
+
+	file = fopen(path, "w+");
+	ASSERT(file != NULL);
+	free(path);
 
 	dir = opendir(tag->fpath);
-	if (!dir) return 1;
+	ASSERT(dir != NULL);
+
 	while ((ent = readdir(dir))) {
 		if (!strcmp(ent->d_name, "."))
 			continue;
 		if (!strcmp(ent->d_name, ".."))
+			continue;
+		if (!strcmp(ent->d_name, "index"))
 			continue;
 
 		/* skip files without extension */
 		if (!strchr(ent->d_name, '.'))
 			continue;
 
-		track = track_init(tag->fpath, ent->d_name);
+		path = aprintf("%s/%s", tag->fpath, ent->d_name);
+		ASSERT(path != NULL);
+		fid = stat(path, &st) ? -1 : st.st_ino;
+		free(path);
+
+		fprintf(file, "%i:%s\n", fid, ent->d_name);
+	}
+
+	closedir(dir);
+	fclose(file);
+}
+
+void
+tracks_load(struct tag *tag)
+{
+	char linebuf[1024];
+	struct link *link;
+	struct track *track;
+	struct track *track2;
+	struct ref *ref;
+	char *index_path;
+	char *track_name, *sep;
+	int track_fid;
+	FILE *file;
+
+	index_path = aprintf("%s/index", tag->fpath);
+	ASSERT(index_path != NULL);
+
+	file = fopen(index_path, "r");
+	if (file == NULL) {
+		index_update(tag);
+		file = fopen(index_path, "r");
+		ASSERT(file != NULL);
+	}
+
+	while (fgets(linebuf, sizeof(linebuf), file)) {
+		sep = strchr(linebuf, '\n');
+		if (sep) *sep = '\0';
+
+		sep = strchr(linebuf, ':');
+		ASSERT(sep != NULL);
+		*sep = '\0';
+
+		track_fid = atoi(linebuf);
+		track_name = sep + 1;
+		track = track_init(tag->fpath, track_name, track_fid);
 
 		ref = ref_init(tag);
 		ASSERT(ref != NULL);
@@ -398,27 +465,46 @@ tracks_load(struct tag *tag)
 		ASSERT(ref != NULL);
 		list_push_back(&tag->tracks, LINK(ref));
 
-		for (iter = tracks.next; iter; iter = iter->next) {
-			track_iter = UPCAST(iter, struct ref)->data;
-			if (track->fid == track_iter->fid)
+		for (link = tracks.next; link; link = link->next) {
+			track2 = UPCAST(link, struct ref)->data;
+			if (track->fid == track2->fid)
 				break;
 		}
 
-		if (!iter) {
+		if (!link) {
 			ref = ref_init(track);
 			ASSERT(ref != NULL);
 			list_push_back(&tracks, LINK(ref));
 		}
 	}
-	closedir(dir);
 
-	return 0;
+	fclose(file);
+	free(index_path);
 }
 
 void
 tracks_save(struct tag *tag)
 {
-	
+	struct track *track;
+	struct link *link;
+	char *index_path;
+	FILE *file;
+
+	/* write playlist back to index file */
+
+	index_path = aprintf("%s/index", tag->fpath);
+	ASSERT(index != NULL);
+
+	file = fopen(index_path, "w+");
+	ASSERT(file != NULL);
+
+	for (link = tracks.next; link; link = link->next) {
+		track = UPCAST(link, struct ref)->data;
+		fprintf(file, "%i:%s\n", track->fid, track->fname);
+	}
+
+	fclose(file);
+	free(index_path);
 }
 
 void
@@ -771,21 +857,14 @@ int
 cmd_pane_input(wint_t c)
 {
 	wchar_t *res;
-
-	if (cmd_mode == IMODE_EXECUTE) {
-		history = &command_history;
-		completion = command_name_gen;
-	} else if (cmd_mode == IMODE_TRACK_SEARCH) {
-		history = &track_search_history;
-		completion = track_name_gen;
-	} else if (cmd_mode == IMODE_TAG_SEARCH) {
-		history = &tag_search_history;
-		completion = tag_name_gen;
-	}
+	int match;
 
 	switch (c) {
 	case KEY_ESC:
-		if (history->sel == history->input)
+		match = wcscmp(completion_query.buf, history->input->buf);
+		if (!completion_reset && match)
+			inputln_copy(history->input, &completion_query);
+		else if (history->sel == history->input)
 			pane_sel = pane_top_sel;
 		else
 			history->sel = history->input;
@@ -1060,16 +1139,22 @@ main_input(wint_t c)
 		cmd_mode = IMODE_EXECUTE;
 		pane_sel = &pane_bot;
 		completion_reset = 1;
+		history = &command_history;
+		completion = command_name_gen;
 		break;
 	case L'/':
 		cmd_mode = IMODE_TRACK_SEARCH;
 		pane_sel = &pane_bot;
 		completion_reset = 1;
+		history = &track_search_history;
+		completion = track_name_gen;
 		break;
 	case L'?':
 		cmd_mode = IMODE_TAG_SEARCH;
 		pane_sel = &pane_bot;
 		completion_reset = 1;
+		history = &tag_search_history;
+		completion = tag_name_gen;
 		break;
 	case L'+':
 		player_set_volume(MIN(100, player->volume + 5));
