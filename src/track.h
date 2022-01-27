@@ -3,10 +3,9 @@
 #include "list.h"
 #include "util.h"
 
-
 struct track {
 	wchar_t *name;
-	struct link tags;
+	struct list tags;
 	char *fname, *fpath;
 	int fid;
 };

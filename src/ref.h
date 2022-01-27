@@ -11,6 +11,6 @@ struct ref {
 struct ref *ref_init(void *data);
 void ref_free(void *ref);
 
-void refs_free(struct link *head);
-int refs_incl(struct link *head, void *data);
-void refs_rm(struct link *head, void *data);
+void refs_free(struct list *list);
+int refs_incl(struct list *list, void *data);
+void refs_rm(struct list *list, void *data);

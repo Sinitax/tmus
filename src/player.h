@@ -38,11 +38,11 @@ struct player {
 
 	/* TODO combine with index */
 	/* for navigating forward and backwards in time */
-	struct link queue;
-	struct link history;
+	struct list queue;
+	struct list history;
 
 	/* list of track refs to choose from on prev / next */
-	struct link playlist;
+	struct list playlist;
 
 	/* last player track */
 	struct track *track;

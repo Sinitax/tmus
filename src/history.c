@@ -4,11 +4,10 @@
 #include <string.h>
 #include <wchar.h>
 
-
 void
 history_init(struct history *history)
 {
-	history->list = LIST_HEAD;
+	list_init(&history->list);
 	history->input = inputln_alloc();
 	history->sel = history->input;
 }
@@ -41,13 +40,9 @@ history_free(struct history *history)
 	ln = link_pop(LINK(history->input));
 	inputln_free(UPCAST(ln, struct inputln));
 
-	for (iter = history->list.next; iter; ) {
-		next = iter->next;
-		inputln_free(UPCAST(iter, struct inputln));
-		iter = next;
-	}
+	list_free(&history->list, (link_free_func) inputln_free,
+		LINK_OFFSET(struct inputln));
 
-	history->list = LIST_HEAD;
 	history->input = NULL;
 	history->sel = NULL;
 }
@@ -102,7 +97,7 @@ history_add(struct history *history, struct inputln *line)
 
 	if (list_len(&history->list) == HISTORY_MAX) {
 		/* pop last item to make space */
-		back = link_pop(link_back(&history->list));
+		back = list_pop_back(&history->list);
 		inputln_free(UPCAST(back, struct inputln));
 	}
 

@@ -61,10 +61,10 @@ player_init(void)
 	player->conn = mpd_connection_new(NULL, 0, 0);
 	ASSERT(player->conn != NULL);
 
-	player->queue = LIST_HEAD;
-	player->history = LIST_HEAD;
+	list_init(&player->queue);
+	list_init(&player->history);
 
-	player->playlist = LIST_HEAD;
+	list_init(&player->playlist);
 
 	player->track = NULL;
 	player->loaded = 0;
@@ -118,11 +118,10 @@ player_play_next(struct track *prev)
 	if (player->shuffle) {
 		/* TODO better algorithm for random sequence */
 		index = rand() % list_len(&player->playlist);
-		iter = link_iter(player->playlist.next, index);
+		iter = list_at(&player->playlist, index);
 		ASSERT(iter != NULL);
 	} else if (player->loaded) {
-		iter = player->playlist.next;
-		for (; iter; iter = iter->next) {
+		for (LIST_ITER(&player->playlist, iter)) {
 			track = UPCAST(iter, struct ref)->data;
 			if (track == prev)
 				break;
@@ -130,7 +129,7 @@ player_play_next(struct track *prev)
 		if (iter) iter = iter->next;
 	}
 
-	if (!iter) iter = player->playlist.next;
+	if (!iter) iter = list_at(&player->playlist, 0);
 	track = UPCAST(iter, struct ref)->data;
 
 	player_play_track(track);
@@ -251,12 +250,7 @@ player_update(void)
 void
 player_queue_clear(void)
 {
-	struct ref *ref;
-
-	while (player->queue.next) {
-		ref = UPCAST(link_pop(player->queue.next), struct ref);
-		ref_free(ref);
-	}
+	refs_free(&player->queue);
 }
 
 void
@@ -266,8 +260,7 @@ player_queue_append(struct track *track)
 	struct link *link;
 
 	ref = ref_init(track);
-	link = link_back(&player->queue);
-	link_append(link, LINK(ref));
+	list_push_back(&player->queue, LINK(ref));
 }
 
 void
@@ -277,7 +270,7 @@ player_queue_insert(struct track *track, size_t pos)
 	struct link *link;
 
 	ref = ref_init(track);
-	link = link_iter(player->queue.next, pos);
+	link = list_at(&player->queue, pos);
 	link_prepend(link, LINK(ref));
 }
 

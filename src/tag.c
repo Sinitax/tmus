@@ -29,7 +29,7 @@ tag_init(const char *path, const char *fname)
 
 	tag->link = LINK_EMPTY;
 
-	tag->tracks = LIST_HEAD;
+	list_init(&tag->tracks);
 
 	return tag;
 }

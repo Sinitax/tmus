@@ -15,7 +15,7 @@ struct inputln {
 };
 
 struct history {
-	struct link list;
+	struct list list;
 	struct inputln *sel, *input;
 };
 

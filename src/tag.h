@@ -9,7 +9,7 @@ struct tag {
 
 	char *new_fname;
 
-	struct link tracks;
+	struct list tracks;
 
 	struct link link;
 };

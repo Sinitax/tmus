@@ -5,7 +5,6 @@
 #include <string.h>
 #include <sys/stat.h>
 
-
 struct track *
 track_init(const char *dir, const char *fname, int fid)
 {
@@ -29,7 +28,7 @@ track_init(const char *dir, const char *fname, int fid)
 
 	track->fid = fid;
 
-	track->tags = LIST_HEAD;
+	list_init(&track->tags);
 
 	return track;
 }

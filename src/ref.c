@@ -20,18 +20,20 @@ ref_free(void *ref)
 }
 
 void
-refs_free(struct link *head)
+refs_free(struct list *list)
 {
-	list_free(head, ref_free, LINK_OFFSET(struct ref));
+	list_free(list, ref_free, LINK_OFFSET(struct ref));
 }
 
 static struct link *
-refs_ffind(struct link *head, void *data)
+refs_ffind(struct list *list, void *data)
 {
 	struct link *iter;
+	struct ref *ref;
 
-	for (iter = head->next; iter; iter = iter->next) {
-		if (UPCAST(iter, struct ref)->data == data)
+	for (LIST_ITER(list, iter)) {
+		ref = UPCAST(iter, struct ref);
+		if (ref->data == data)
 			return iter;
 	}
 
@@ -39,21 +41,21 @@ refs_ffind(struct link *head, void *data)
 }
 
 int
-refs_incl(struct link *head, void *data)
+refs_incl(struct list *list, void *data)
 {
 	struct link *ref;
 
-	ref = refs_ffind(head, data);
+	ref = refs_ffind(list, data);
 	return ref != NULL;
 }
 
 void
-refs_rm(struct link *head, void *data)
+refs_rm(struct list *list, void *data)
 {
 	struct link *ref;
 	struct ref *dataref;
 
-	ref = refs_ffind(head, data);
+	ref = refs_ffind(list, data);
 	if (!ref) return;
 
 	dataref = UPCAST(ref, struct ref);
