@@ -847,8 +847,9 @@ select_tag(const wchar_t *query)
 	struct link *iter;
 	int index;
 
-	index = 0;
+	index = -1;
 	for (LIST_ITER(&tags, iter)) {
+		index += 1;
 		tag = UPCAST(iter, struct tag);
 		if (wcsstr(tag->name, query)) {
 			listnav_update_sel(&tag_nav, index);

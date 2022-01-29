@@ -112,6 +112,7 @@ inputln_init(struct inputln *ln)
 	ln->cap = 0;
 	ln->cur = 0;
 	ln->link = LINK_EMPTY;
+	inputln_resize(ln, 128);
 }
 
 struct inputln *
@@ -122,7 +123,6 @@ inputln_alloc(void)
 	ln = malloc(sizeof(struct inputln));
 	ASSERT(ln != NULL);
 	inputln_init(ln);
-	inputln_resize(ln, 128);
 
 	return ln;
 }
@@ -202,11 +202,10 @@ inputln_copy(struct inputln *dst, struct inputln *src)
 void
 inputln_replace(struct inputln *line, const wchar_t *str)
 {
-	free(line->buf);
-	line->buf = wcsdup(str);
-	ASSERT(line->buf != NULL);
 	line->len = wcslen(str);
-	line->cap = line->len + 1;
+	if (line->cap <= line->len)
+		inputln_resize(line, line->len + 1);
+	line->buf = wcscpy(line->buf, str);
 	line->cur = line->len;
 }
 
