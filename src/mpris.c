@@ -5,6 +5,8 @@
 
 #include <stdbool.h>
 
+static void dbus_handle_getall(DBusMessage *msg);
+
 int dbus_active;
 DBusConnection *dbus_conn;
 
@@ -15,37 +17,6 @@ static const char *const dbus_mpris_caps[] = {
 	"CanGoNext",
 	"CanControl"
 };
-
-void
-dbus_init(void)
-{
-	DBusError err;
-	int ret;
-
-	dbus_active = 0;
-
-	dbus_error_init(&err);
-
-	/* dont fail if dbus not available, not everyone has
-	 * it or needs it to play music */
-	dbus_conn = dbus_bus_get(DBUS_BUS_SESSION, &err);
-	if (dbus_error_is_set(&err) || !dbus_conn) {
-		dbus_error_free(&err);
-		return;
-	}
-
-	/* register as MPRIS compliant player for events */
-	ret = dbus_bus_request_name(dbus_conn, "org.mpris.MediaPlayer2.tmus",
-		DBUS_NAME_FLAG_REPLACE_EXISTING, &err);
-	if (dbus_error_is_set(&err))
-		PANIC("Failed to register as MPRIS service\n");
-
-	log_info("DBus active!\n");
-
-	dbus_active = 1;
-
-	dbus_error_free(&err);
-}
 
 void
 dbus_handle_getall(DBusMessage *msg)
@@ -105,6 +76,45 @@ dbus_handle_getall(DBusMessage *msg)
 }
 
 void
+dbus_init(void)
+{
+	DBusError err;
+	int ret;
+
+	dbus_active = 0;
+
+	dbus_error_init(&err);
+
+	/* dont fail if dbus not available, not everyone has
+	 * it or needs it to play music */
+	dbus_conn = dbus_bus_get(DBUS_BUS_SESSION, &err);
+	if (dbus_error_is_set(&err) || !dbus_conn) {
+		dbus_error_free(&err);
+		return;
+	}
+
+	/* register as MPRIS compliant player for events */
+	ret = dbus_bus_request_name(dbus_conn, "org.mpris.MediaPlayer2.tmus",
+		DBUS_NAME_FLAG_REPLACE_EXISTING, &err);
+	if (dbus_error_is_set(&err))
+		PANIC("Failed to register as MPRIS service\n");
+
+	log_info("DBus active!\n");
+
+	dbus_active = 1;
+
+	dbus_error_free(&err);
+}
+
+void
+dbus_deinit(void)
+{
+	if (!dbus_active) return;
+
+	dbus_connection_unref(dbus_conn);
+}
+
+void
 dbus_update(void)
 {
 	DBusMessage *msg;
@@ -135,13 +145,5 @@ dbus_update(void)
 	}
 
 	dbus_message_unref(msg);
-}
-
-void
-dbus_end(void)
-{
-	if (!dbus_active) return;
-
-	dbus_connection_unref(dbus_conn);
 }
 

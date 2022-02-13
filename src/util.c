@@ -1,9 +1,9 @@
 #define _XOPEN_SOURCE 600
 
 #include "util.h"
+#include "tui.h"
 
-#include "execinfo.h"
-#include "ncurses.h"
+#include <execinfo.h>
 
 #include <stdarg.h>
 #include <stdlib.h>
@@ -45,7 +45,8 @@ panic(const char *file, int line, const char *msg, ...)
 {
 	va_list ap;
 
-	endwin();
+	tui_restore();
+
 	fprintf(stderr, "Panic at %s:%i (", file, line);
 	va_start(ap, msg);
 	vfprintf(stderr, msg, ap);
@@ -60,8 +61,10 @@ assert(int cond, const char *file, int line, const char *condstr)
 {
 	if (cond) return;
 
-	endwin();
+	tui_restore();
+
 	fprintf(stderr, "Assertion failed %s:%i (%s)\n", file, line, condstr);
+
 	exit(1);
 }
 

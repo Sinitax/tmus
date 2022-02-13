@@ -1,6 +1,8 @@
 #pragma once
 
-#include "ncurses.h"
+#define NCURSES_WIDECHAR 1
+
+#include <ncurses.h>
 
 #include <wchar.h>
 

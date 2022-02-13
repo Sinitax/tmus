@@ -24,6 +24,7 @@ struct player *player;
 
 static void player_clear_msg(void);
 static int handle_mpd_status(int status);
+static void player_play_next(struct track *track);
 
 static void
 player_clear_msg(void)
@@ -50,6 +51,37 @@ handle_mpd_status(int status)
 		PANIC("PLAYER: Connection abruptly closed");
 	}
 	return 0;
+}
+
+void
+player_play_next(struct track *prev)
+{
+	struct link *iter;
+	struct track *track;
+	int index;
+
+	if (list_empty(&player->playlist))
+		return;
+
+	iter = NULL;
+	if (player->shuffle) {
+		/* TODO better algorithm for random sequence */
+		index = rand() % list_len(&player->playlist);
+		iter = list_at(&player->playlist, index);
+		ASSERT(iter != NULL);
+	} else if (player->loaded) {
+		for (LIST_ITER(&player->playlist, iter)) {
+			track = UPCAST(iter, struct ref)->data;
+			if (track == prev)
+				break;
+		}
+		if (iter) iter = iter->next;
+	}
+
+	if (!iter) iter = list_at(&player->playlist, 0);
+	track = UPCAST(iter, struct ref)->data;
+
+	player_play_track(track);
 }
 
 void
@@ -87,7 +119,7 @@ player_init(void)
 }
 
 void
-player_free(void)
+player_deinit(void)
 {
 	struct link *iter;
 
@@ -102,37 +134,6 @@ player_free(void)
 
 	//mpd_run_clear(player->conn);
 	mpd_connection_free(player->conn);
-}
-
-void
-player_play_next(struct track *prev)
-{
-	struct link *iter;
-	struct track *track;
-	int index;
-
-	if (list_empty(&player->playlist))
-		return;
-
-	iter = NULL;
-	if (player->shuffle) {
-		/* TODO better algorithm for random sequence */
-		index = rand() % list_len(&player->playlist);
-		iter = list_at(&player->playlist, index);
-		ASSERT(iter != NULL);
-	} else if (player->loaded) {
-		for (LIST_ITER(&player->playlist, iter)) {
-			track = UPCAST(iter, struct ref)->data;
-			if (track == prev)
-				break;
-		}
-		if (iter) iter = iter->next;
-	}
-
-	if (!iter) iter = list_at(&player->playlist, 0);
-	track = UPCAST(iter, struct ref)->data;
-
-	player_play_track(track);
 }
 
 void

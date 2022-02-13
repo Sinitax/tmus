@@ -6,7 +6,7 @@
 #include <sys/stat.h>
 
 struct track *
-track_init(const char *dir, const char *fname, int fid)
+track_alloc(const char *dir, const char *fname, int fid)
 {
 	struct track *track;
 	int len;

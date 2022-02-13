@@ -10,5 +10,5 @@ struct track {
 	int fid;
 };
 
-struct track *track_init(const char *dir, const char *file, int fid);
+struct track *track_alloc(const char *dir, const char *file, int fid);
 void track_free(struct track *t);
