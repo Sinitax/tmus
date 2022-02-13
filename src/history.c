@@ -41,7 +41,7 @@ history_free(struct history *history)
 	inputln_free(UPCAST(ln, struct inputln));
 
 	list_free(&history->list, (link_free_func) inputln_free,
-		LINK_OFFSET(struct inputln));
+		LINK_OFFSET(struct inputln, link));
 
 	history->input = NULL;
 	history->sel = NULL;

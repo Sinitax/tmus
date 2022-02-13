@@ -10,6 +10,9 @@
 #define PANIC(...) panic(__FILE__, __LINE__, "" __VA_ARGS__)
 #define ASSERT(x) assert((x), __FILE__, __LINE__, #x)
 
+#define LINK(p) (&(p)->link)
+#define UPCAST(iter, type) LINK_UPCAST(iter, type, link)
+
 int strnwidth(const char *s, int n);
 
 void panic(const char *file, int line, const char *msg, ...);

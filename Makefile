@@ -1,10 +1,17 @@
-CFLAGS = -O2 -I src -g $(shell pkg-config --cflags glib-2.0 dbus-1)
+CFLAGS = -I src -g $(shell pkg-config --cflags glib-2.0 dbus-1)
+CFLAGS += -I lib/clist/include
 LDLIBS = -lcurses -lmpdclient $(shell pkg-config --libs glib-2.0 dbus-1)
 DEPFLAGS = -MT $@ -MMD -MP -MF build/$*.d
+
+ifeq "$(PROF)" "YES"
+	CFLAGS += -pg
+endif
 
 SRCS = $(wildcard src/*.c)
 OBJS = $(SRCS:src/%.c=build/%.o)
 DEPS = $(OBJS:%.o=%.d)
+
+LIBLIST_A = lib/clist/build/liblist.a
 
 .PHONY: all tmus clean install uninstall
 
@@ -23,11 +30,11 @@ build/%.d: | build;
 
 include $(DEPS)
 
-tmus: $(OBJS)
-	$(CC) -o $@ $^ $(CFLAGS) $(LDLIBS)
+$(LIBLIST_A):
+	make -C lib/clist build/liblist.a
 
-tmus.prof: $(OBJS)
-	$(CC) -o $@ $^ -pg $(CFLAGS) $(LDLIBS)
+tmus: $(OBJS) $(LIBLIST_A)
+	$(CC) -o tmus $^ $(CFLAGS) $(LDLIBS)
 
 install:
 	install -m 755 tmus /usr/bin

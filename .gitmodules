@@ -1,0 +1,3 @@
+[submodule "lib/clist"]
+	path = lib/clist
+	url = git@sinitax.com:sinitax/clist

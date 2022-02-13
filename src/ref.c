@@ -22,7 +22,7 @@ ref_free(void *ref)
 void
 refs_free(struct list *list)
 {
-	list_free(list, ref_free, LINK_OFFSET(struct ref));
+	list_free(list, ref_free, LINK_OFFSET(struct ref, link));
 }
 
 static struct link *

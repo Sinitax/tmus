@@ -7,3 +7,4 @@ todo
 log*
 gmon.out*
 profile.txt
+compile_commands.json
