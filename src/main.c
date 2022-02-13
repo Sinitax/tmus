@@ -16,13 +16,15 @@
 #include "curses.h"
 
 #include <dirent.h>
+#include <fcntl.h>
 #include <locale.h>
 #include <signal.h>
-#include <sys/stat.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/ioctl.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -39,6 +41,12 @@
 #define ATTR_ON(win, attr) wattr_on(win, attr, NULL)
 #define ATTR_OFF(win, attr) wattr_off(win, attr, NULL)
 
+#define CMD_ERROR(...) do { \
+		free(cmd_status); \
+		cmd_status = awprintf(__VA_ARGS__); \
+		return false; \
+	} while (0)
+
 enum {
 	STYLE_DEFAULT,
 	STYLE_TITLE,
@@ -47,6 +55,7 @@ enum {
 	STYLE_ITEM_HOVER,
 	STYLE_ITEM_HOVER_SEL,
 	STYLE_PREV,
+	STYLE_ERROR,
 	STYLE_COUNT
 };
 
@@ -102,6 +111,7 @@ static int cmd_show, cmd_mode;
 static struct inputln completion_query;
 static int completion_reset;
 static completion_gen completion;
+static wchar_t *cmd_status;
 
 /* left pane for tags */
 static struct pane *tag_pane;
@@ -123,10 +133,15 @@ static void data_load(void);
 static void data_save(void);
 static void data_free(void);
 
+static int get_fid(const char *path);
 static void index_update(struct tag *tag);
 static void tracks_load(struct tag *tag);
 static void tracks_save(struct tag *tag);
 
+static void copy_file(const char *dst, const char *src);
+static void move_file(const char *dst, const char *src);
+
+static struct tag *tag_find(const wchar_t *query);
 static void pane_title(struct pane *pane, const char *title, int highlight);
 
 static void style_init(int style, int fg, int bg, int attr);
@@ -153,7 +168,9 @@ static void update_track_playlist(void);
 static void main_input(wint_t c);
 static void main_vis(void);
 
-static int usercmd_save(const wchar_t *args);
+static int cmd_save(const wchar_t *args);
+static int cmd_move(const wchar_t *args);
+static int cmd_add(const wchar_t *args);
 
 const char imode_prefix[IMODE_COUNT] = {
 	[IMODE_EXECUTE] = ':',
@@ -162,7 +179,9 @@ const char imode_prefix[IMODE_COUNT] = {
 };
 
 const struct cmd cmds[] = {
-	{ L"save", usercmd_save },
+	{ L"save", cmd_save },
+	{ L"move", cmd_move },
+	{ L"add", cmd_move },
 };
 
 void
@@ -196,6 +215,8 @@ init(void)
 	track_show_playlist = 0;
 	update_track_playlist();
 
+	cmd_status = NULL;
+
 	on_exit(cleanup, NULL);
 	signal(SIGINT, exit);
 }
@@ -203,9 +224,13 @@ init(void)
 void
 cleanup(int exitcode, void* arg)
 {
-	if (!exitcode) tui_end();
+	if (!exitcode) {
+		tui_end();
+	} else {
+		curs_set(1);
+	}
 
-	if (!exitcode) data_save();
+	data_save();
 	data_free();
 
 	player_free();
@@ -231,6 +256,7 @@ tui_init(void)
 	style_init(STYLE_ITEM_SEL, COLOR_YELLOW, COLOR_BLACK, A_BOLD);
 	style_init(STYLE_ITEM_HOVER, COLOR_WHITE, COLOR_BLUE, 0);
 	style_init(STYLE_ITEM_HOVER_SEL, COLOR_YELLOW, COLOR_BLUE, A_BOLD);
+	style_init(STYLE_ERROR, COLOR_RED, COLOR_BLACK, 0);
 	style_init(STYLE_PREV, COLOR_WHITE, COLOR_BLACK, A_DIM);
 
 	pane_init((tag_pane = &pane_left), tag_pane_input, tag_pane_vis);
@@ -350,7 +376,13 @@ data_load(void)
 void
 data_save(void)
 {
-	
+	struct link *iter;
+	struct tag *tag;
+
+	for (LIST_ITER(&tags, iter)) {
+		tag = UPCAST(iter, struct tag);
+		tracks_save(tag);
+	}
 }
 
 void
@@ -376,6 +408,13 @@ data_free(void)
 		}
 		tag_free(tag);
 	}
+}
+
+int
+get_fid(const char *path)
+{
+	struct stat st;
+	return stat(path, &st) ? -1 : st.st_ino;
 }
 
 void
@@ -410,12 +449,12 @@ index_update(struct tag *tag)
 			continue;
 
 		/* skip files without extension */
-		if (!strchr(ent->d_name, '.'))
+		if (!strchr(ent->d_name + 1, '.'))
 			continue;
 
 		path = aprintf("%s/%s", tag->fpath, ent->d_name);
 		ASSERT(path != NULL);
-		fid = stat(path, &st) ? -1 : st.st_ino;
+		fid = get_fid(path);
 		free(path);
 
 		fprintf(file, "%i:%s\n", fid, ent->d_name);
@@ -436,7 +475,11 @@ tracks_load(struct tag *tag)
 	char *index_path;
 	char *track_name, *sep;
 	int track_fid;
+	bool new_track;
 	FILE *file;
+
+	printf("Loading files from %s", tag->fpath);
+	fflush(stdout);
 
 	index_path = aprintf("%s/index", tag->fpath);
 	ASSERT(index_path != NULL);
@@ -468,18 +511,22 @@ tracks_load(struct tag *tag)
 		ASSERT(ref != NULL);
 		list_push_back(&tag->tracks, LINK(ref));
 
+		new_track = true;
 		for (LIST_ITER(&tracks, link)) {
 			track2 = UPCAST(link, struct ref)->data;
-			if (track->fid == track2->fid)
-				break;
+			if (track->fid > 0 && track->fid == track2->fid)
+				new_track = false;
 		}
 
-		if (!link) {
+		if (new_track) {
 			ref = ref_init(track);
 			ASSERT(ref != NULL);
 			list_push_back(&tracks, LINK(ref));
 		}
 	}
+
+	/* clear line and reset cursor */
+	printf("\x1b[0K\r");
 
 	fclose(file);
 	free(index_path);
@@ -495,19 +542,79 @@ tracks_save(struct tag *tag)
 
 	/* write playlist back to index file */
 
+	printf("Saving tracks to %s", tag->fpath);
+
 	index_path = aprintf("%s/index", tag->fpath);
 	ASSERT(index != NULL);
 
 	file = fopen(index_path, "w+");
 	ASSERT(file != NULL);
 
-	for (LIST_ITER(&tracks, link)) {
+	for (LIST_ITER(&tag->tracks, link)) {
 		track = UPCAST(link, struct ref)->data;
 		fprintf(file, "%i:%s\n", track->fid, track->fname);
 	}
 
+	/* clear line and reset cursor */
+	printf("\x1b[0K\r");
+
 	fclose(file);
 	free(index_path);
+}
+
+void
+rm_file(const char *path)
+{
+	ASSERT(unlink(path) == 0);
+}
+
+void
+copy_file(const char *src, const char *dst)
+{
+	FILE *in, *out;
+	char buf[4096];
+	int len, nread;
+
+	in = fopen(src, "r");
+	if (in == NULL)
+		PANIC("Failed to open file %s", src);
+
+	out = fopen(dst, "w+");
+	if (out == NULL)
+		PANIC("Failed to open file %s", dst);
+
+	while ((nread = fread(buf, 1, sizeof(buf), in)) > 0) {
+		fwrite(buf, 1, nread, out);
+	}
+
+	if (nread < 0)
+		PANIC("Copy failed!", src, dst);
+
+	fclose(in);
+	fclose(out);
+}
+
+void
+move_file(const char *src, const char *dst)
+{
+	copy_file(src, dst);
+	rm_file(src);
+}
+
+struct tag *
+tag_find(const wchar_t *query)
+{
+	struct link *iter;
+	struct tag *tag;
+
+	for (LIST_ITER(&tags, iter)) {
+		tag = UPCAST(iter, struct tag);
+		if (!wcscmp(tag->name, query)) {
+			return tag;
+		}
+	}
+
+	return NULL;
 }
 
 void
@@ -741,9 +848,8 @@ track_pane_input(wint_t c)
 		listnav_update_sel(&track_nav, track_nav.sel + 1);
 		return 1;
 	case KEY_ENTER:
-		if (list_empty(tracks_vis)) return 1;
 		link = list_at(tracks_vis, track_nav.sel);
-		ASSERT(link != NULL);
+		if (!link) return 1;
 		track = UPCAST(link, struct ref)->data;
 		player_play_track(track);
 		return 1;
@@ -815,7 +921,11 @@ run_cmd(const wchar_t *query)
 	cmdlen = sep ? sep - query : wcslen(query);
 	for (i = 0; i < ARRLEN(cmds); i++) {
 		if (!wcsncmp(cmds[i].name, query, cmdlen)) {
-			cmds[i].func(sep ? sep + 1 : NULL);
+			if (!cmds[i].func(sep ? sep + 1 : NULL)) {
+				free(cmd_status);
+				cmd_status = wcsdup(L"Command Failed!\n");
+				ASSERT(cmd_status != NULL);
+			}
 			return 1;
 		}
 	}
@@ -1027,6 +1137,9 @@ cmd_pane_vis(struct pane *pane, int sel)
 		/* cmd and search input */
 		line = linebuf;
 
+		free(cmd_status);
+		cmd_status = NULL;
+
 		cmd = history->sel;
 		if (cmd != history->input) {
 			index = 0;
@@ -1054,6 +1167,11 @@ cmd_pane_vis(struct pane *pane, int sel)
 				? cmd->buf[cmd->cur] : L' ');
 			ATTR_OFF(pane->win, A_REVERSE);
 		}
+	} else if (cmd_status) {
+		pane_clearln(pane, 2);
+		style_on(pane->win, STYLE_ERROR);
+		mvwaddwstr(pane->win, 2, 1, cmd_status);
+		style_off(pane->win, STYLE_ERROR);
 	}
 }
 
@@ -1063,22 +1181,22 @@ queue_hover(void)
 	struct link *link;
 
 	link = list_at(&player->playlist, track_nav.sel);
-	ASSERT(link != NULL);
+	if (!link) return;
 	player_queue_append(UPCAST(link, struct ref)->data);
 }
 
 void
 update_track_playlist(void)
 {
-	struct link *iter;
+	struct link *link;
 	struct tag *tag;
 
 	if (track_show_playlist) {
 		tracks_vis = &player->playlist;
 	} else {
-		iter = list_at(&tags, tag_nav.sel);
-		ASSERT(iter != NULL);
-		tag = UPCAST(iter, struct tag);
+		link = list_at(&tags, tag_nav.sel);
+		if (!link) return;
+		tag = UPCAST(link, struct tag);
 		tracks_vis = &tag->tracks;
 	}
 }
@@ -1202,10 +1320,65 @@ main_vis(void)
 }
 
 int
-usercmd_save(const wchar_t *args)
+cmd_save(const wchar_t *args)
 {
 	data_save();
 	return 0;
+}
+
+int
+cmd_move(const wchar_t *name)
+{
+	struct link *link;
+	struct track *track;
+	struct tag *tag;
+	char *newpath;
+
+	tag = tag_find(name);
+	if (!tag) CMD_ERROR(L"Tag not found");
+
+	link = list_at(tracks_vis, track_nav.sel);
+	if (!link) CMD_ERROR(L"No track selected");
+	track = UPCAST(link, struct ref)->data;
+
+	newpath = aprintf("%s/%s", tag->fpath, track->fname);
+	ASSERT(newpath != NULL);
+	move_file(track->fpath, newpath);
+	free(track->fpath);
+	track->fpath = newpath;
+
+	link_pop(link);
+	list_push_back(&tag->tracks, link);
+
+	return 1;
+}
+
+int
+cmd_add(const wchar_t *name)
+{
+	struct link *link;
+	struct track *track;
+	struct ref *ref;
+	struct tag *tag;
+	char *newpath;
+
+	tag = tag_find(name);
+	if (!tag) return 0;
+
+	link = list_at(&player->playlist, track_nav.sel);
+	if (!link) return 0;
+	track = UPCAST(link, struct ref)->data;
+
+	newpath = aprintf("%s/%s", tag->fpath, track->fname);
+	ASSERT(newpath != NULL);
+	copy_file(track->fpath, newpath);
+	track->fpath = newpath;
+
+	track = track_init(tag->fpath, track->fname, get_fid(tag->fpath));
+	ref = ref_init(track);
+	list_push_back(&tag->tracks, &ref->link);
+
+	return 1;
 }
 
 int

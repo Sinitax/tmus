@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdio.h>
+#include <wchar.h>
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) > (b) ? (b) : (a))
@@ -15,6 +16,7 @@ void panic(const char *file, int line, const char *msg, ...);
 void assert(int cond, const char *file, int line, const char *condstr);
 
 char *aprintf(const char *fmtstr, ...);
+wchar_t *awprintf(const wchar_t *fmtstr, ...);
 char *appendstrf(char *alloc, const char *fmtstr, ...);
 
 char *sanitized(const char *instr);
