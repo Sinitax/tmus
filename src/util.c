@@ -68,6 +68,20 @@ assert(int cond, const char *file, int line, const char *condstr)
 	exit(1);
 }
 
+void
+error(const char *fmtstr, ...)
+{
+	va_list ap;
+
+	tui_restore();
+
+	va_start(ap, fmtstr);
+	vfprintf(stderr, fmtstr, ap);
+	va_end(ap);
+
+	exit(1);
+}
+
 wchar_t *
 awprintf(const wchar_t *fmtstr, ...)
 {
@@ -82,7 +96,7 @@ awprintf(const wchar_t *fmtstr, ...)
 	va_end(ap);
 
 	str = malloc((size + 1) * sizeof(wchar_t));
-	ASSERT(str != NULL);
+	if (!str) return NULL;
 
 	va_start(cpy, fmtstr);
 	swprintf(str, size + 1, fmtstr, cpy);
@@ -105,7 +119,7 @@ aprintf(const char *fmtstr, ...)
 	va_end(ap);
 
 	str = malloc(size + 1);
-	ASSERT(str != NULL);
+	if (!str) return NULL;
 
 	va_start(cpy, fmtstr);
 	vsnprintf(str, size + 1, fmtstr, cpy);
@@ -128,7 +142,7 @@ appendstrf(char *alloc, const char *fmtstr, ...)
 
 	prevlen = alloc ? strlen(alloc) : 0;
 	alloc = realloc(alloc, prevlen + size + 1);
-	ASSERT(alloc != NULL);
+	if (!alloc) return NULL;
 
 	va_start(cpy, fmtstr);
 	vsnprintf(alloc + prevlen, size + 1, fmtstr, cpy);
@@ -145,7 +159,8 @@ sanitized(const char *instr)
 	int i;
 
 	clean = strdup(instr);
-	ASSERT(clean != NULL);
+	OOM_CHECK(clean);
+
 	for (i = 0, p = instr; *p; p++) {
 		if (strchr(allowed, *p))
 			clean[i++] = *p;

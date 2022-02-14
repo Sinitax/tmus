@@ -157,7 +157,7 @@ track_name_gen(const wchar_t *text, int fwd, int reset)
 		iter = fwd ? cur->next : cur->prev;
 	}
 
-	while (iter && LIST_INNER(&tracks, iter)) {
+	while (LIST_INNER(iter)) {
 		track = UPCAST(iter, struct ref)->data;
 		if (wcsstr(track->name, text)) {
 			cur = iter;
@@ -183,7 +183,7 @@ tag_name_gen(const wchar_t *text, int fwd, int reset)
 		iter = fwd ? cur->next : cur->prev;
 	}
 
-	while (iter && LIST_INNER(&tags, iter)) {
+	while (LIST_INNER(iter)) {
 		tag = UPCAST(iter, struct tag);
 		if (wcsstr(tag->name, text)) {
 			cur = iter;
@@ -614,6 +614,7 @@ cmd_pane_vis(struct pane *pane, int sel)
 			for (LIST_ITER(&history->list, iter)) {
 				if (UPCAST(iter, struct inputln) == cmd)
 					break;
+				index += 1;
 			}
 			line += swprintf(line, end - line, L"[%i] ",
 				iter ? index : -1);

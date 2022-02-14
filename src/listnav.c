@@ -13,6 +13,7 @@ void
 listnav_update_bounds(struct listnav *nav, int min, int max)
 {
 	ASSERT(max >= min);
+
 	nav->min = min;
 	nav->max = max;
 	listnav_update_wlen(nav, MIN(nav->wlen, nav->max - nav->min));

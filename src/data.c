@@ -33,10 +33,11 @@ data_load(void)
 	list_init(&tags_sel);
 
 	datadir = getenv("TMUS_DATA");
-	ASSERT(datadir != NULL);
+	if (!datadir) ERROR("TMUS_DATA not set!\n");
 
 	dir = opendir(datadir);
-	ASSERT(dir != NULL);
+	if (!dir) ERROR("Failed to access dir: %s\n", datadir);
+
 	while ((ent = readdir(dir))) {
 		if (!strcmp(ent->d_name, "."))
 			continue;
@@ -44,7 +45,7 @@ data_load(void)
 			continue;
 
 		path = aprintf("%s/%s", datadir, ent->d_name);
-		ASSERT(path != NULL);
+		OOM_CHECK(path);
 
 		if (!stat(path, &st) && S_ISDIR(st.st_mode)) {
 			tag = tag_init(datadir, ent->d_name);
@@ -56,6 +57,7 @@ data_load(void)
 	}
 	closedir(dir);
 
+	/* TODO: ensure this is ok and remove */
 	ASSERT(!list_empty(&tags));
 }
 
@@ -117,14 +119,14 @@ index_update(struct tag *tag)
 	int fid;
 
 	path = aprintf("%s/index", tag->fpath);
-	ASSERT(path != NULL);
-
-	file = fopen(path, "w+");
-	ASSERT(file != NULL);
-	free(path);
+	OOM_CHECK(path);
 
 	dir = opendir(tag->fpath);
-	ASSERT(dir != NULL);
+	if (!dir) ERROR("Failed to access dir: %s\n", tag->fpath);
+
+	file = fopen(path, "w+");
+	if (!file) ERROR("Failed to create file: %s\n", path);
+	free(path);
 
 	while ((ent = readdir(dir))) {
 		if (!strcmp(ent->d_name, "."))
@@ -139,7 +141,7 @@ index_update(struct tag *tag)
 			continue;
 
 		path = aprintf("%s/%s", tag->fpath, ent->d_name);
-		ASSERT(path != NULL);
+		OOM_CHECK(path);
 		fid = get_fid(path);
 		free(path);
 
@@ -164,15 +166,12 @@ tracks_load(struct tag *tag)
 	bool new_track;
 	FILE *file;
 
-	printf("Loading files from %s", tag->fpath);
-	fflush(stdout);
-
 	index_path = aprintf("%s/index", tag->fpath);
-	ASSERT(index_path != NULL);
+	OOM_CHECK(index_path);
 
 	file = fopen(index_path, "r");
 	if (file == NULL) {
-		index_update(tag);
+		index_update(tag); /* create index */
 		file = fopen(index_path, "r");
 		ASSERT(file != NULL);
 	}
@@ -182,7 +181,7 @@ tracks_load(struct tag *tag)
 		if (sep) *sep = '\0';
 
 		sep = strchr(linebuf, ':');
-		ASSERT(sep != NULL);
+		if (!sep) ERROR("Syntax error in index file: %s\n", index_path);
 		*sep = '\0';
 
 		track_fid = atoi(linebuf);
@@ -190,11 +189,11 @@ tracks_load(struct tag *tag)
 		track = track_alloc(tag->fpath, track_name, track_fid);
 
 		ref = ref_init(tag);
-		ASSERT(ref != NULL);
+		OOM_CHECK(ref);
 		list_push_back(&track->tags, LINK(ref));
 
 		ref = ref_init(track);
-		ASSERT(ref != NULL);
+		OOM_CHECK(ref);
 		list_push_back(&tag->tracks, LINK(ref));
 
 		new_track = true;
@@ -206,13 +205,10 @@ tracks_load(struct tag *tag)
 
 		if (new_track) {
 			ref = ref_init(track);
-			ASSERT(ref != NULL);
+			OOM_CHECK(ref);
 			list_push_back(&tracks, LINK(ref));
 		}
 	}
-
-	/* clear line and reset cursor */
-	printf("\x1b[0K\r");
 
 	fclose(file);
 	free(index_path);
@@ -228,21 +224,16 @@ tracks_save(struct tag *tag)
 
 	/* write playlist back to index file */
 
-	printf("Saving tracks to %s", tag->fpath);
-
 	index_path = aprintf("%s/index", tag->fpath);
-	ASSERT(index != NULL);
+	OOM_CHECK(index_path);
 
 	file = fopen(index_path, "w+");
-	ASSERT(file != NULL);
+	if (!file) ERROR("Failed to write to index file: %s\n", index_path);
 
 	for (LIST_ITER(&tag->tracks, link)) {
 		track = UPCAST(link, struct ref)->data;
 		fprintf(file, "%i:%s\n", track->fid, track->fname);
 	}
-
-	/* clear line and reset cursor */
-	printf("\x1b[0K\r");
 
 	fclose(file);
 	free(index_path);
@@ -263,18 +254,18 @@ copy_file(const char *src, const char *dst)
 
 	in = fopen(src, "r");
 	if (in == NULL)
-		PANIC("Failed to open file %s", src);
+		ERROR("Failed to read from file: %s\n", src);
 
 	out = fopen(dst, "w+");
 	if (out == NULL)
-		PANIC("Failed to open file %s", dst);
+		ERROR("Failed to write to file: %s\n", dst);
 
 	while ((nread = fread(buf, 1, sizeof(buf), in)) > 0) {
 		fwrite(buf, 1, nread, out);
 	}
 
 	if (nread < 0)
-		PANIC("Copy failed!", src, dst);
+		ERROR("Failed to copy file from %s to %s\n", src, dst);
 
 	fclose(in);
 	fclose(out);

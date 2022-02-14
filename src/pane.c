@@ -43,3 +43,4 @@ pane_free(struct pane *pane)
 {
 	delwin(pane->win);
 }
+

@@ -59,7 +59,8 @@ cmd_move(const wchar_t *name)
 	track = UPCAST(link, struct ref)->data;
 
 	newpath = aprintf("%s/%s", tag->fpath, track->fname);
-	ASSERT(newpath != NULL);
+	OOM_CHECK(newpath);
+
 	move_file(track->fpath, newpath);
 	free(track->fpath);
 	track->fpath = newpath;
@@ -87,7 +88,8 @@ cmd_add(const wchar_t *name)
 	track = UPCAST(link, struct ref)->data;
 
 	newpath = aprintf("%s/%s", tag->fpath, track->fname);
-	ASSERT(newpath != NULL);
+	OOM_CHECK(newpath);
+
 	copy_file(track->fpath, newpath);
 	track->fpath = newpath;
 

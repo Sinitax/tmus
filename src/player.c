@@ -88,10 +88,10 @@ void
 player_init(void)
 {
 	player = malloc(sizeof(struct player));
-	ASSERT(player != NULL);
+	OOM_CHECK(player);
 
 	player->conn = mpd_connection_new(NULL, 0, 0);
-	ASSERT(player->conn != NULL);
+	OOM_CHECK(player->conn);
 
 	list_init(&player->queue);
 	list_init(&player->history);

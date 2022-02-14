@@ -68,10 +68,12 @@ history_list_next(struct inputln *cur, const wchar_t *search)
 	struct link *iter;
 	struct inputln *ln;
 
-	for (iter = cur->link.next; iter; iter = iter->next) {
+	iter = cur->link.next;
+	while (LIST_INNER(iter)) {
 		ln = UPCAST(iter, struct inputln);
 		if (!search || !*search || wcsstr(ln->buf, search))
 			return ln;
+		iter = iter->next;
 	}
 
 	return cur;
@@ -121,7 +123,7 @@ inputln_alloc(void)
 	struct inputln *ln;
 
 	ln = malloc(sizeof(struct inputln));
-	ASSERT(ln != NULL);
+	OOM_CHECK(ln);
 	inputln_init(ln);
 
 	return ln;
@@ -194,7 +196,7 @@ inputln_copy(struct inputln *dst, struct inputln *src)
 	}
 	dst->len = src->len;
 	dst->buf = wcsdup(src->buf);
-	ASSERT(dst->buf != NULL);
+	OOM_CHECK(dst->buf);
 	dst->cap = src->len + 1;
 	dst->cur = dst->len;
 }
@@ -216,7 +218,8 @@ inputln_resize(struct inputln *ln, size_t size)
 
 	ln->cap = size;
 	ln->buf = realloc(ln->buf, ln->cap * sizeof(wchar_t));
-	ASSERT(ln->buf != NULL);
+	OOM_CHECK(ln->buf);
 	ln->len = MIN(ln->len, ln->cap-1);
 	ln->buf[ln->len] = '\0';
 }
+
