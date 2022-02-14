@@ -17,6 +17,8 @@
 
 int strnwidth(const char *s, int n);
 
+const wchar_t *wcscasestr(const wchar_t *haystack, const wchar_t *needle);
+
 void panic(const char *file, int line, const char *msg, ...);
 void assert(int cond, const char *file, int line, const char *condstr);
 void error(const char *fmtstr, ...);

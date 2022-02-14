@@ -55,7 +55,7 @@ history_list_prev(struct inputln *cur, const wchar_t *search)
 
 	for (iter = cur->link.prev; iter && iter->prev; iter = iter->prev) {
 		ln = UPCAST(iter, struct inputln);
-		if (!search || !*search || wcsstr(ln->buf, search))
+		if (!search || !*search || wcscasestr(ln->buf, search))
 			return ln;
 	}
 
@@ -71,7 +71,7 @@ history_list_next(struct inputln *cur, const wchar_t *search)
 	iter = cur->link.next;
 	while (LIST_INNER(iter)) {
 		ln = UPCAST(iter, struct inputln);
-		if (!search || !*search || wcsstr(ln->buf, search))
+		if (!search || !*search || wcscasestr(ln->buf, search))
 			return ln;
 		iter = iter->next;
 	}

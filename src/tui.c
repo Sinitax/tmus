@@ -159,7 +159,7 @@ track_name_gen(const wchar_t *text, int fwd, int reset)
 
 	while (LIST_INNER(iter)) {
 		track = UPCAST(iter, struct ref)->data;
-		if (wcsstr(track->name, text)) {
+		if (wcscasestr(track->name, text)) {
 			cur = iter;
 			return wcsdup(track->name);
 		}
@@ -185,7 +185,7 @@ tag_name_gen(const wchar_t *text, int fwd, int reset)
 
 	while (LIST_INNER(iter)) {
 		tag = UPCAST(iter, struct tag);
-		if (wcsstr(tag->name, text)) {
+		if (wcscasestr(tag->name, text)) {
 			cur = iter;
 			return wcsdup(tag->name);
 		}
@@ -412,7 +412,7 @@ play_track(const wchar_t *query)
 
 	for (LIST_ITER(&tracks, iter)) {
 		track = UPCAST(iter, struct ref)->data;
-		if (wcsstr(track->name, query)) {
+		if (!wcscmp(track->name, query)) {
 			player_play_track(track);
 			return 1;
 		}
@@ -432,7 +432,7 @@ select_tag(const wchar_t *query)
 	for (LIST_ITER(&tags, iter)) {
 		index += 1;
 		tag = UPCAST(iter, struct tag);
-		if (wcsstr(tag->name, query)) {
+		if (wcscasestr(tag->name, query)) {
 			listnav_update_sel(&tag_nav, index);
 			return 1;
 		}

@@ -1,4 +1,5 @@
 #define _XOPEN_SOURCE 600
+#define _GNU_SOURCE
 
 #include "util.h"
 #include "tui.h"
@@ -38,6 +39,21 @@ strnwidth(const char *s, int n)
 
 done:
 	return width;
+}
+
+const wchar_t *
+wcscasestr(const wchar_t *haystack, const wchar_t *needle)
+{
+	int hslen, nlen, i;
+
+	nlen = wcslen(needle);
+	hslen = wcslen(haystack) - nlen;
+	for (i = 0; i < hslen; i++) {
+		if (!wcsncasecmp(haystack + i, needle, nlen))
+			return haystack + i;
+	}
+
+	return NULL;
 }
 
 void
