@@ -137,6 +137,10 @@ dbus_update(void)
 		log_info("MPRIS: Method %s\n", method);
 		if (!strcmp(method, "PlayPause")) {
 			player_toggle_pause();
+		} else if (!strcmp(method, "Pause")) {
+			player_pause();
+		} else if (!strcmp(method, "Play")) {
+			player_play();
 		} else if (!strcmp(method, "Next")) {
 			player_next();
 		} else if (!strcmp(method, "Previous")) {
