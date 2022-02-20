@@ -253,6 +253,12 @@ tag_pane_input(wint_t c)
 	case KEY_NPAGE:
 		listnav_update_sel(&tag_nav, tag_nav.sel + tag_nav.wlen / 2);
 		return 1;
+	case 'g':
+		listnav_update_sel(&tag_nav, 0);
+		break;
+	case 'G':
+		listnav_update_sel(&tag_nav, tag_nav.max - 1);
+		break;
 	}
 
 	return 0;
@@ -330,6 +336,12 @@ track_pane_input(wint_t c)
 		listnav_update_sel(&track_nav,
 			track_nav.sel + track_nav.wlen / 2);
 		return 1;
+	case 'g':
+		listnav_update_sel(&track_nav, 0);
+		break;
+	case 'G':
+		listnav_update_sel(&track_nav, track_nav.max - 1);
+		break;
 	}
 
 	return 0;
