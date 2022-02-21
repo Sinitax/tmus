@@ -96,6 +96,7 @@ struct list *tracks_vis;
 int track_show_playlist;
 struct listnav tag_nav;
 struct listnav track_nav;
+char *cmd_status;
 
 const char imode_prefix[IMODE_COUNT] = {
 	[IMODE_EXECUTE] = ':',
@@ -400,22 +401,12 @@ track_pane_vis(struct pane *pane, int sel)
 bool
 run_cmd(const wchar_t *query)
 {
-	const wchar_t *sep;
-	int i, cmdlen;
 	bool success;
 
-	sep = wcschr(query, L' ');
-	cmdlen = sep ? sep - query : wcslen(query);
-	for (i = 0; i < command_count; i++) {
-		if (!wcsncmp(commands[i].name, query, cmdlen)) {
-			success = commands[i].func(sep ? sep + 1 : L"");
-			if (!success && !cmd_status)
-				CMD_SET_STATUS("Command Failed!");
-			return true;
-		}
-	}
-
-	return false;
+	success = cmd_run(query);
+	if (!success && !cmd_status)
+		CMD_SET_STATUS("Command Failed!");
+	return true;
 }
 
 bool
@@ -682,9 +673,7 @@ cmd_pane_vis(struct pane *pane, int sel)
 		}
 	} else if (cmd_status) {
 		pane_clearln(pane, 2);
-		style_on(pane->win, STYLE_ERROR);
-		mvwprintw(pane->win, 2, 0, ">%.*s", pane->w - 1, cmd_status);
-		style_off(pane->win, STYLE_ERROR);
+		mvwprintw(pane->win, 2, 0, " %.*s", pane->w - 1, cmd_status);
 	}
 }
 
@@ -778,6 +767,9 @@ main_input(wint_t c)
 		} else {
 			player_play();
 		}
+		break;
+	case L'.':
+		cmd_rerun();
 		break;
 	case L':':
 		cmd_input_mode = IMODE_EXECUTE;
@@ -905,6 +897,8 @@ tui_init(void)
 	quit = 0;
 	cmd_input_mode = IMODE_TRACK_SELECT;
 
+	cmd_status = NULL;
+
 	inputln_init(&completion_query);
 	completion_reset = 1;
 
@@ -937,6 +931,8 @@ tui_init(void)
 void
 tui_deinit(void)
 {
+	free(cmd_status);
+
 	pane_free(&pane_left);
 	pane_free(&pane_right);
 	pane_free(&pane_bot);

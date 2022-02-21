@@ -22,4 +22,5 @@ extern int track_show_playlist;
 extern struct listnav tag_nav;
 extern struct listnav track_nav;
 
+extern char *cmd_status;
 

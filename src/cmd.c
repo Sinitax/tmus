@@ -16,6 +16,9 @@
 		return false; \
 	} while (0)
 
+static const struct cmd *last_cmd;
+static wchar_t *last_args;
+
 static bool cmd_save(const wchar_t *args);
 static bool cmd_move(const wchar_t *args);
 static bool cmd_add(const wchar_t *args);
@@ -29,20 +32,6 @@ const struct cmd commands[] = {
 };
 
 const size_t command_count = ARRLEN(commands);
-
-char *cmd_status;
-
-void
-cmd_init(void)
-{
-	cmd_status = NULL;
-}
-
-void
-cmd_deinit(void)
-{
-	free(cmd_status);
-}
 
 bool
 cmd_save(const wchar_t *args)
@@ -147,4 +136,72 @@ cmd_reindex(const wchar_t *name)
 	refs_free(&matches);
 
 	return true;
+}
+
+void
+cmd_init(void)
+{
+	last_cmd = NULL;
+	last_args = NULL;
+}
+
+void
+cmd_deinit(void)
+{
+	free(last_args);
+}
+
+bool
+cmd_run(const wchar_t *query)
+{
+	const wchar_t *sep, *args;
+	int i, cmdlen;
+	bool success;
+
+	sep = wcschr(query, L' ');
+	cmdlen = sep ? sep - query : wcslen(query);
+	for (i = 0; i < command_count; i++) {
+		if (!wcsncmp(commands[i].name, query, cmdlen)) {
+			last_cmd = &commands[i];
+			args = sep ? sep + 1 : L"";
+			last_args = wcsdup(args);
+			return commands[i].func(args);
+		}
+	}
+
+	return false;
+}
+
+bool
+cmd_rerun(void)
+{
+	if (!last_cmd || !last_args)
+		CMD_ERROR("No command to repeat");
+	return last_cmd->func(last_args);
+}
+
+const struct cmd *
+cmd_get(const wchar_t *name)
+{
+	int i;
+
+	for (i = 0; i < command_count; i++) {
+		if (!wcscmp(commands[i].name, name))
+			return &commands[i];
+	}
+
+	return NULL;
+}
+
+const struct cmd *
+cmd_find(const wchar_t *name)
+{
+	int i;
+
+	for (i = 0; i < command_count; i++) {
+		if (wcsstr(commands[i].name, name))
+			return &commands[i];
+	}
+
+	return NULL;
 }

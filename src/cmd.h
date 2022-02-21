@@ -19,6 +19,11 @@ struct cmd {
 void cmd_init(void);
 void cmd_deinit(void);
 
+bool cmd_run(const wchar_t *name);
+bool cmd_rerun(void);
+
+const struct cmd *cmd_get(const wchar_t *name);
+const struct cmd *cmd_find(const wchar_t *name);
+
 extern const struct cmd commands[];
 extern const size_t command_count;
-extern char *cmd_status;
