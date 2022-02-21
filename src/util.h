@@ -24,7 +24,6 @@ void assert(int cond, const char *file, int line, const char *condstr);
 void error(const char *fmtstr, ...);
 
 char *aprintf(const char *fmtstr, ...);
-wchar_t *awprintf(const wchar_t *fmtstr, ...);
 char *appendstrf(char *alloc, const char *fmtstr, ...);
 
 char *sanitized(const char *instr);

@@ -98,29 +98,6 @@ error(const char *fmtstr, ...)
 	exit(1);
 }
 
-wchar_t *
-awprintf(const wchar_t *fmtstr, ...)
-{
-	va_list ap, cpy;
-	size_t size;
-	wchar_t *str;
-
-	va_copy(cpy, ap);
-
-	va_start(ap, fmtstr);
-	size = swprintf(NULL, 0, fmtstr, ap);
-	va_end(ap);
-
-	str = malloc((size + 1) * sizeof(wchar_t));
-	if (!str) return NULL;
-
-	va_start(cpy, fmtstr);
-	swprintf(str, size + 1, fmtstr, cpy);
-	va_end(cpy);
-
-	return str;
-}
-
 char *
 aprintf(const char *fmtstr, ...)
 {

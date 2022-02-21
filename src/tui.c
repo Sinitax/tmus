@@ -29,8 +29,9 @@
 
 enum {
 	IMODE_EXECUTE,
-	IMODE_TRACK_SEARCH,
-	IMODE_TAG_SEARCH,
+	IMODE_TRACK_PLAY,
+	IMODE_TRACK_SELECT,
+	IMODE_TAG_SELECT,
 	IMODE_COUNT
 };
 
@@ -49,8 +50,10 @@ static void tag_pane_vis(struct pane *pane, int sel);
 static int track_pane_input(wint_t c);
 static void track_pane_vis(struct pane *pane, int sel);
 
-static int play_track(const wchar_t *name);
-static int select_tag(const wchar_t *name);
+static bool run_cmd(const wchar_t *name);
+static bool play_track(const wchar_t *name);
+static bool select_track(const wchar_t *name);
+static bool select_tag(const wchar_t *name);
 
 static int cmd_pane_input(wint_t c);
 static void cmd_pane_vis(struct pane *pane, int sel);
@@ -74,8 +77,9 @@ static struct pane *const panes[] = {
 };
 
 static struct history command_history;
-static struct history track_search_history;
-static struct history tag_search_history;
+static struct history track_play_history;
+static struct history track_select_history;
+static struct history tag_select_history;
 static struct history *history;
 
 static int cmd_input_mode;
@@ -86,7 +90,7 @@ static int completion_reset;
 static completion_gen completion;
 
 struct pane *cmd_pane, *tag_pane, *track_pane;
-struct pane *pane_sel, *pane_top_sel;
+struct pane *pane_sel, *pane_after_cmd;
 
 struct list *tracks_vis;
 int track_show_playlist;
@@ -95,8 +99,9 @@ struct listnav track_nav;
 
 const char imode_prefix[IMODE_COUNT] = {
 	[IMODE_EXECUTE] = ':',
-	[IMODE_TRACK_SEARCH] = '/',
-	[IMODE_TAG_SEARCH] = '?',
+	[IMODE_TRACK_PLAY] = '!',
+	[IMODE_TRACK_SELECT] = '/',
+	[IMODE_TAG_SELECT] = '?',
 };
 
 static const char player_state_chars[] = {
@@ -392,7 +397,7 @@ track_pane_vis(struct pane *pane, int sel)
 	}
 }
 
-int
+bool
 run_cmd(const wchar_t *query)
 {
 	const wchar_t *sep;
@@ -403,20 +408,17 @@ run_cmd(const wchar_t *query)
 	cmdlen = sep ? sep - query : wcslen(query);
 	for (i = 0; i < command_count; i++) {
 		if (!wcsncmp(commands[i].name, query, cmdlen)) {
-			success = commands[i].func(sep ? sep + 1 : NULL);
-			if (!success && !cmd_status) {
-				free(cmd_status);
-				cmd_status = wcsdup(L"Command Failed!\n");
-				ASSERT(cmd_status != NULL);
-			}
-			return 1;
+			success = commands[i].func(sep ? sep + 1 : L"");
+			if (!success && !cmd_status)
+				CMD_SET_STATUS("Command Failed!");
+			return true;
 		}
 	}
 
-	return 0;
+	return false;
 }
 
-int
+bool
 play_track(const wchar_t *query)
 {
 	struct track *track;
@@ -426,14 +428,35 @@ play_track(const wchar_t *query)
 		track = UPCAST(iter, struct ref)->data;
 		if (!wcscmp(track->name, query)) {
 			player_play_track(track);
-			return 1;
+			return true;
 		}
 	}
 
-	return 0;
+	return false;
 }
 
-int
+bool
+select_track(const wchar_t *query)
+{
+	struct track *track;
+	struct link *link;
+	int index;
+
+	index = 0;
+	for (LIST_ITER(tracks_vis, link)) {
+		track = UPCAST(link, struct ref)->data;
+		if (!wcscmp(track->name, query)) {
+			listnav_update_sel(&track_nav, index);
+			pane_after_cmd = track_pane;
+			return true;
+		}
+		index += 1;
+	}
+
+	return false;
+}
+
+bool
 select_tag(const wchar_t *query)
 {
 	struct tag *tag;
@@ -444,13 +467,14 @@ select_tag(const wchar_t *query)
 	for (LIST_ITER(&tags, iter)) {
 		index += 1;
 		tag = UPCAST(iter, struct tag);
-		if (wcscasestr(tag->name, query)) {
+		if (!wcscmp(tag->name, query)) {
 			listnav_update_sel(&tag_nav, index);
-			return 1;
+			pane_after_cmd = tag_pane;
+			return true;
 		}
 	}
 
-	return 0;
+	return false;
 }
 
 int
@@ -462,12 +486,14 @@ cmd_pane_input(wint_t c)
 	switch (c) {
 	case KEY_ESC:
 		match = wcscmp(completion_query.buf, history->input->buf);
-		if (!completion_reset && match)
+		if (!completion_reset && match) {
 			inputln_copy(history->input, &completion_query);
-		else if (history->sel == history->input)
-			pane_sel = pane_top_sel;
-		else
+		} else if (history->sel == history->input) {
+			inputln_replace(history->input, L"");
+			pane_sel = pane_after_cmd;
+		} else {
 			history->sel = history->input;
+		}
 		break;
 	case KEY_LEFT:
 		inputln_left(history->sel);
@@ -486,20 +512,26 @@ cmd_pane_input(wint_t c)
 		break;
 	case KEY_ENTER:
 		if (!*history->sel->buf) {
-			pane_sel = pane_top_sel;
+			pane_sel = pane_after_cmd;
 			break;
 		}
 
 		if (cmd_input_mode == IMODE_EXECUTE) {
-			run_cmd(history->sel->buf);
-		} else if (cmd_input_mode == IMODE_TRACK_SEARCH) {
-			play_track(history->sel->buf);
-		} else if (cmd_input_mode == IMODE_TAG_SEARCH) {
-			select_tag(history->sel->buf);
+			if (!run_cmd(history->sel->buf))
+				CMD_SET_STATUS("No such command");
+		} else if (cmd_input_mode == IMODE_TRACK_PLAY) {
+			if (!play_track(history->sel->buf))
+				CMD_SET_STATUS("Failed to find track");
+		} else if (cmd_input_mode == IMODE_TRACK_SELECT) {
+			if (!select_track(history->sel->buf))
+				CMD_SET_STATUS("Failed to find track");
+		} else if (cmd_input_mode == IMODE_TAG_SELECT) {
+			if (!select_tag(history->sel->buf))
+				CMD_SET_STATUS("Failed to find tag");
 		}
 
 		history_submit(history);
-		pane_sel = pane_top_sel;
+		pane_sel = pane_after_cmd;
 		break;
 	case KEY_TAB:
 	case KEY_BTAB:
@@ -520,7 +552,7 @@ cmd_pane_input(wint_t c)
 		break;
 	case KEY_BACKSPACE:
 		if (history->sel->cur == 0) {
-			pane_sel = pane_top_sel;
+			pane_sel = pane_after_cmd;
 			break;
 		}
 		inputln_del(history->sel, 1);
@@ -651,7 +683,7 @@ cmd_pane_vis(struct pane *pane, int sel)
 	} else if (cmd_status) {
 		pane_clearln(pane, 2);
 		style_on(pane->win, STYLE_ERROR);
-		mvwaddwstr(pane->win, 2, 1, cmd_status);
+		mvwprintw(pane->win, 2, 0, ">%.*s", pane->w - 1, cmd_status);
 		style_off(pane->win, STYLE_ERROR);
 	}
 }
@@ -692,10 +724,10 @@ main_input(wint_t c)
 	case KEY_TAB:
 		pane_sel = pane_sel == &pane_left
 			? &pane_right : &pane_left;
-		pane_top_sel = pane_sel;
 		break;
 	case KEY_ESC:
-		pane_sel = pane_top_sel;
+		if (pane_sel == cmd_pane)
+			pane_sel = pane_after_cmd;
 		break;
 	case KEY_LEFT:
 		if (!player->loaded) break;
@@ -749,23 +781,34 @@ main_input(wint_t c)
 		break;
 	case L':':
 		cmd_input_mode = IMODE_EXECUTE;
+		pane_after_cmd = pane_sel;
 		pane_sel = &pane_bot;
 		completion_reset = 1;
 		history = &command_history;
 		completion = command_name_gen;
 		break;
 	case L'/':
-		cmd_input_mode = IMODE_TRACK_SEARCH;
+		cmd_input_mode = IMODE_TRACK_SELECT;
+		pane_after_cmd = pane_sel;
 		pane_sel = &pane_bot;
 		completion_reset = 1;
-		history = &track_search_history;
+		history = &track_select_history;
+		completion = track_name_gen;
+		break;
+	case L'!':
+		cmd_input_mode = IMODE_TRACK_PLAY;
+		pane_after_cmd = pane_sel;
+		pane_sel = &pane_bot;
+		completion_reset = 1;
+		history = &track_play_history;
 		completion = track_name_gen;
 		break;
 	case L'?':
-		cmd_input_mode = IMODE_TAG_SEARCH;
+		cmd_input_mode = IMODE_TAG_SELECT;
+		pane_after_cmd = pane_sel;
 		pane_sel = &pane_bot;
 		completion_reset = 1;
-		history = &tag_search_history;
+		history = &tag_select_history;
 		completion = tag_name_gen;
 		break;
 	case L'+':
@@ -855,17 +898,19 @@ tui_resize(void)
 	pane_resize(&pane_right, pane_left.ex + 1, 0, scrw, scrh - 3);
 	pane_resize(&pane_bot, 0, scrh - 3, scrw, scrh);
 }
+
 void
 tui_init(void)
 {
 	quit = 0;
-	cmd_input_mode = IMODE_TRACK_SEARCH;
+	cmd_input_mode = IMODE_TRACK_SELECT;
 
 	inputln_init(&completion_query);
 	completion_reset = 1;
 
-	history_init(&track_search_history);
-	history_init(&tag_search_history);
+	history_init(&track_play_history);
+	history_init(&track_select_history);
+	history_init(&tag_select_history);
 	history_init(&command_history);
 	history = &command_history;
 
@@ -878,7 +923,7 @@ tui_init(void)
 	pane_init((cmd_pane = &pane_bot), cmd_pane_input, cmd_pane_vis);
 
 	pane_sel = &pane_left;
-	pane_top_sel = pane_sel;
+	pane_after_cmd = pane_sel;
 
 	listnav_init(&tag_nav);
 	listnav_init(&track_nav);
@@ -896,8 +941,9 @@ tui_deinit(void)
 	pane_free(&pane_right);
 	pane_free(&pane_bot);
 
-	history_free(&track_search_history);
-	history_free(&tag_search_history);
+	history_free(&track_play_history);
+	history_free(&track_select_history);
+	history_free(&tag_select_history);
 	history_free(&command_history);
 
 	if (!isendwin()) endwin();

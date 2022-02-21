@@ -14,7 +14,7 @@ bool tui_update(void);
 void tui_restore(void);
 
 extern struct pane *cmd_pane, *tag_pane, *track_pane;
-extern struct pane *pane_sel, *pane_top_sel;
+extern struct pane *pane_sel, *pane_after_cmd;
 
 extern struct list *tracks_vis;
 extern int track_show_playlist;

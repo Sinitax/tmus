@@ -4,6 +4,11 @@
 
 #include <stdbool.h>
 
+#define CMD_SET_STATUS(...) do { \
+		free(cmd_status); \
+		cmd_status = aprintf(__VA_ARGS__); \
+	} while (0)
+
 typedef bool (*cmd_func)(const wchar_t *args);
 
 struct cmd {
@@ -12,7 +17,8 @@ struct cmd {
 };
 
 void cmd_init(void);
+void cmd_deinit(void);
 
 extern const struct cmd commands[];
 extern const size_t command_count;
-extern wchar_t *cmd_status;
+extern char *cmd_status;

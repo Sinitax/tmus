@@ -4,6 +4,7 @@
 #include "list.h"
 #include "player.h"
 #include "ref.h"
+#include "tag.h"
 #include "track.h"
 #include "tui.h"
 #include "util.h"
@@ -11,29 +12,36 @@
 #include <stdbool.h>
 
 #define CMD_ERROR(...) do { \
-		free(cmd_status); \
-		cmd_status = awprintf(__VA_ARGS__); \
+		CMD_SET_STATUS(__VA_ARGS__); \
 		return false; \
 	} while (0)
 
 static bool cmd_save(const wchar_t *args);
 static bool cmd_move(const wchar_t *args);
 static bool cmd_add(const wchar_t *args);
+static bool cmd_reindex(const wchar_t *args);
 
 const struct cmd commands[] = {
 	{ L"save", cmd_save },
 	{ L"move", cmd_move },
 	{ L"add", cmd_add },
+	{ L"reindex", cmd_reindex },
 };
 
 const size_t command_count = ARRLEN(commands);
 
-wchar_t *cmd_status;
+char *cmd_status;
 
 void
 cmd_init(void)
 {
 	cmd_status = NULL;
+}
+
+void
+cmd_deinit(void)
+{
+	free(cmd_status);
 }
 
 bool
@@ -52,10 +60,10 @@ cmd_move(const wchar_t *name)
 	char *newpath;
 
 	tag = tag_find(name);
-	if (!tag) CMD_ERROR(L"Tag not found");
+	if (!tag) CMD_ERROR("Tag not found");
 
 	link = list_at(tracks_vis, track_nav.sel);
-	if (!link) CMD_ERROR(L"No track selected");
+	if (!link) CMD_ERROR("No track selected");
 	track = UPCAST(link, struct ref)->data;
 
 	newpath = aprintf("%s/%s", tag->fpath, track->fname);
@@ -98,4 +106,45 @@ cmd_add(const wchar_t *name)
 	list_push_back(&tag->tracks, &ref->link);
 
 	return 1;
+}
+
+bool
+cmd_reindex(const wchar_t *name)
+{
+	struct link *link;
+	struct tag *tag;
+	struct list matches;
+
+	list_init(&matches);
+
+	if (!*name) {
+		link = list_at(&tags, tag_nav.sel);
+		tag = UPCAST(link, struct tag);
+		if (tag == NULL) return false;
+		list_push_back(&matches, LINK(ref_init(tag)));
+	} else if (!wcscmp(name, L"*")) {
+		for (LIST_ITER(&tags, link)) {
+			tag = UPCAST(link, struct tag);
+			list_push_back(&matches, LINK(ref_init(tag)));
+		}
+	} else {
+		for (LIST_ITER(&tags, link)) {
+			tag = UPCAST(link, struct tag);
+			if (!wcscmp(tag->name, name)) {
+				list_push_back(&matches, LINK(ref_init(tag)));
+				break;
+			}
+		}
+	}
+
+	if (list_empty(&matches)) return false;
+
+	for (LIST_ITER(&matches, link)) {
+		tag = UPCAST(link, struct ref)->data;
+		index_update(tag);
+	}
+
+	refs_free(&matches);
+
+	return true;
 }

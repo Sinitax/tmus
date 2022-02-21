@@ -41,6 +41,24 @@ refs_ffind(struct list *list, void *data)
 }
 
 int
+refs_index(struct list *list, void *data)
+{
+	struct link *iter;
+	struct ref *ref;
+	int index;
+
+	index = 0;
+	for (LIST_ITER(list, iter)) {
+		ref = UPCAST(iter, struct ref);
+		if (ref->data == data)
+			return index;
+		index++;
+	}
+
+	return -1;
+}
+
+int
 refs_incl(struct list *list, void *data)
 {
 	struct link *ref;
