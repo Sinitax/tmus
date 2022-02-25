@@ -225,13 +225,13 @@ toggle_current_tag(void)
 	}
 
 	/* rebuild the full playlist */
-	refs_free(&player->playlist);
+	refs_free(&player.playlist);
 	for (LIST_ITER(&tags_sel, link)) {
 		tag = UPCAST(link, struct ref)->data;
 		for (LIST_ITER(&tag->tracks, iter)) {
 			ref = ref_init(UPCAST(iter, struct ref)->data);
 			ASSERT(ref != NULL);
-			list_push_back(&player->playlist, LINK(ref));
+			list_push_back(&player.playlist, LINK(ref));
 		}
 	}
 }
@@ -375,11 +375,11 @@ track_pane_vis(struct pane *pane, int sel)
 		if (index < track_nav.wmin) continue;
 		if (index >= track_nav.wmax) break;
 
-		if (sel && index == track_nav.sel && track == player->track)
+		if (sel && index == track_nav.sel && track == player.track)
 			style_on(pane->win, STYLE_ITEM_HOVER_SEL);
 		else if (sel && index == track_nav.sel)
 			style_on(pane->win, STYLE_ITEM_HOVER);
-		else if (track == player->track)
+		else if (track == player.track)
 			style_on(pane->win, STYLE_ITEM_SEL);
 		else if (index == track_nav.sel)
 			style_on(pane->win, STYLE_PREV);
@@ -387,11 +387,11 @@ track_pane_vis(struct pane *pane, int sel)
 		wmove(pane->win, 1 + index - track_nav.wmin, 0);
 		wprintw(pane->win, "%-*.*ls", pane->w, pane->w, track->name);
 
-		if (sel && index == track_nav.sel && track == player->track)
+		if (sel && index == track_nav.sel && track == player.track)
 			style_off(pane->win, STYLE_ITEM_HOVER_SEL);
 		else if (sel && index == track_nav.sel)
 			style_off(pane->win, STYLE_ITEM_HOVER);
-		else if (track == player->track)
+		else if (track == player.track)
 			style_off(pane->win, STYLE_ITEM_SEL);
 		else if (index == track_nav.sel)
 			style_off(pane->win, STYLE_PREV);
@@ -581,46 +581,46 @@ cmd_pane_vis(struct pane *pane, int sel)
 	/* track name */
 	style_on(pane->win, STYLE_TITLE);
 	pane_clearln(pane, 0);
-	if (player->track) {
-		swprintf(linebuf, linecap, L"%ls", player->track->name);
+	if (player.loaded && player.track) {
+		swprintf(linebuf, linecap, L"%ls", player.track->name);
 		mvwaddwstr(pane->win, 0, 1, linebuf);
 	}
 	style_off(pane->win, STYLE_TITLE);
 
-	if (player->loaded) {
+	if (player.loaded) {
 		/* status line */
 		line = linebuf;
 		line += swprintf(line, end - line, L"%c ",
-			player_state_chars[player->state]);
+			player_state_chars[player.state]);
 		line += swprintf(line, end - line, L"%s / ",
-			timestr(player->time_pos));
+			timestr(player.time_pos));
 		line += swprintf(line, end - line, L"%s",
-			timestr(player->time_end));
+			timestr(player.time_end));
 
-		if (player->volume >= 0) {
+		if (player.volume >= 0) {
 			line += swprintf(line, end - line, L" - vol: %u%%",
-				player->volume);
+				player.volume);
 		}
 
-		if (player->msg) {
+		if (player.status) {
 			line += swprintf(line, end - line, L" | [PLAYER] %s",
-				player->msg);
+				player.status);
 		}
 
-		if (!list_empty(&player->queue)) {
+		if (list_len(&player.queue)) {
 			line += swprintf(line, end - line,
 				L" | [QUEUE] %i tracks",
-				list_len(&player->queue));
+				list_len(&player.queue));
 		}
 
 		ATTR_ON(pane->win, A_REVERSE);
 		pane_clearln(pane, 1);
 		mvwaddwstr(pane->win, 1, 0, linebuf);
 		ATTR_OFF(pane->win, A_REVERSE);
-	} else if (player->msg) {
+	} else if (player.status) {
 		/* player message */
 		line = linebuf;
-		line += swprintf(line, linecap, L"[PLAYER] %s", player->msg);
+		line += swprintf(line, linecap, L"[PLAYER] %s", player.status);
 		line += swprintf(line, end - line, L"%*.*s",
 				pane->w, pane->w, L" ");
 
@@ -629,12 +629,12 @@ cmd_pane_vis(struct pane *pane, int sel)
 	}
 
 	/* status bits on right of status line */
-	if (player->loaded) ATTR_ON(pane->win, A_REVERSE);
+	if (player.loaded) ATTR_ON(pane->win, A_REVERSE);
 	mvwaddstr(pane->win, 1, pane->w - 5, "[   ]");
 	if (track_show_playlist) mvwaddstr(pane->win, 1, pane->w - 4, "P");
-	if (player->autoplay) mvwaddstr(pane->win, 1, pane->w - 3, "A");
-	if (player->shuffle) mvwaddstr(pane->win, 1, pane->w - 2, "S");
-	if (player->loaded) ATTR_OFF(pane->win, A_REVERSE);
+	if (player.autoplay) mvwaddstr(pane->win, 1, pane->w - 3, "A");
+	if (player.shuffle) mvwaddstr(pane->win, 1, pane->w - 2, "S");
+	if (player.loaded) ATTR_OFF(pane->win, A_REVERSE);
 
 	if (sel || cmd_show) {
 		/* cmd and search input */
@@ -681,10 +681,13 @@ void
 queue_hover(void)
 {
 	struct link *link;
+	struct ref *ref;
 
-	link = list_at(&player->playlist, track_nav.sel);
+	link = list_at(&player.playlist, track_nav.sel);
 	if (!link) return;
-	player_queue_append(UPCAST(link, struct ref)->data);
+
+	ref = UPCAST(link, struct ref);
+	list_push_back(&player.queue, ref->data);
 }
 
 void
@@ -694,7 +697,7 @@ update_track_playlist(void)
 	struct tag *tag;
 
 	if (track_show_playlist) {
-		tracks_vis = &player->playlist;
+		tracks_vis = &player.playlist;
 	} else {
 		link = list_at(&tags, tag_nav.sel);
 		if (!link) return;
@@ -719,18 +722,21 @@ main_input(wint_t c)
 			pane_sel = pane_after_cmd;
 		break;
 	case KEY_LEFT:
-		if (!player->loaded) break;
-		player_seek(MAX(player->time_pos - 10, 0));
+		if (!player.loaded) break;
+		player_seek(MAX(player.time_pos - 10, 0));
 		break;
 	case KEY_RIGHT:
-		if (!player->loaded) break;
-		player_seek(MIN(player->time_pos + 10, player->time_end));
+		if (!player.loaded) break;
+		player_seek(MIN(player.time_pos + 10, player.time_end));
 		break;
 	case L'y':
 		queue_hover();
 		break;
 	case L'o':
-		player_queue_clear();
+		refs_free(&player.queue);
+		break;
+	case L'h':
+		refs_free(&player.history);
 		break;
 	case L'c':
 		player_toggle_pause();
@@ -753,16 +759,16 @@ main_input(wint_t c)
 		}
 		break;
 	case L'A':
-		player->autoplay ^= 1;
+		player.autoplay ^= 1;
 		break;
 	case L'S':
-		player->shuffle ^= 1;
+		player.shuffle ^= 1;
 		break;
 	case L'b':
 		player_seek(0);
 		break;
 	case L'x':
-		if (player->state == PLAYER_STATE_PLAYING) {
+		if (player.state == PLAYER_STATE_PLAYING) {
 			player_stop();
 		} else {
 			player_play();
@@ -804,10 +810,10 @@ main_input(wint_t c)
 		completion = tag_name_gen;
 		break;
 	case L'+':
-		player_set_volume(MIN(100, player->volume + 5));
+		player_set_volume(MIN(100, player.volume + 5));
 		break;
 	case L'-':
-		player_set_volume(MAX(0, player->volume - 5));
+		player_set_volume(MAX(0, player.volume - 5));
 		break;
 	case L'q':
 		quit = 1;

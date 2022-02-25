@@ -80,7 +80,7 @@ cmd_add(const wchar_t *name)
 	tag = tag_find(name);
 	if (!tag) return 0;
 
-	link = list_at(&player->playlist, track_nav.sel);
+	link = list_at(&player.playlist, track_nav.sel);
 	if (!link) return 0;
 	track = UPCAST(link, struct ref)->data;
 

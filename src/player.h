@@ -4,19 +4,15 @@
 #include "list.h"
 #include "util.h"
 
-#include "mpd/client.h"
-
-#include <signal.h>
-
 enum {
-	PLAYER_OK,
-	PLAYER_ERR
+	PLAYER_STATUS_OK,
+	PLAYER_STATUS_ERR
 };
 
 enum {
-	PLAYER_MSG_NONE,
-	PLAYER_MSG_INFO,
-	PLAYER_MSG_ERR
+	PLAYER_STATUS_MSG_NONE,
+	PLAYER_STATUS_MSG_INFO,
+	PLAYER_STATUS_MSG_ERR
 };
 
 enum {
@@ -33,55 +29,47 @@ enum {
 };
 
 struct player {
-	/* TODO move implementation details to source file */
-	struct mpd_connection *conn;
+	/* played track history */
+	struct list history;  /* struct ref -> struct track */
+	struct link *history_sel; /* position in history */
 
-	/* TODO combine with index */
-	/* for navigating forward and backwards in time */
-	struct list queue;
-	struct list history;
+	/* queued tracks */
+	struct list queue; /* struct ref -> struct track */
 
-	/* list of track refs to choose from on prev / next */
-	struct list playlist;
-
-	/* last player track */
+	/* selected track, not (yet) part of history or queue */
 	struct track *track;
 
-	/* player has a track loaded,
-	 * not necessarily player->track */
-	int loaded;
+	/* list of tracks to choose from on prev / next */
+	struct list playlist; /* struct ref -> struct track */
+	struct link *playlist_sel; /* position in playlist */
+
+	/* a track is loaded, not necessarily player.track */
+	bool loaded;
+
+	/* automatically select new tracks when queue empty */
+	bool autoplay;
+
+	/* randomize which track is chosen when queue empty */
+	bool shuffle;
 
 	/* stopped, paused or playing */
 	int state;
 
-	/* automatically select new tracks when queue empty */
-	int autoplay;
-
-	int shuffle;
-
-	int action;
-
-	/* number of frames to wait before unpausing after
-	 * seek to prevent pause-play cycle noises */
-	int seek_delay;
-
+	/* volume adjustment when possible */
 	int volume;
 
+	/* track position and duration */
 	unsigned int time_pos, time_end;
 
 	/* status messaging */
-	char *msg;
-	int msglvl;
+	char *status;
+	int status_lvl;
 };
 
 void player_init(void);
 void player_deinit(void);
 
 void player_update(void);
-
-void player_queue_clear(void);
-void player_queue_append(struct track *track);
-void player_queue_insert(struct track *track, size_t pos);
 
 int player_play_track(struct track *track);
 
@@ -96,5 +84,5 @@ int player_stop(void);
 
 int player_set_volume(unsigned int vol);
 
-extern struct player *player;
+extern struct player player;
 
