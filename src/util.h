@@ -1,7 +1,6 @@
 #pragma once
 
 #include <stdio.h>
-#include <wchar.h>
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) > (b) ? (b) : (a))
@@ -14,10 +13,6 @@
 
 #define LINK(p) (&(p)->link)
 #define UPCAST(iter, type) LINK_UPCAST(iter, type, link)
-
-int strnwidth(const char *s, int n);
-
-const wchar_t *wcscasestr(const wchar_t *haystack, const wchar_t *needle);
 
 void panic(const char *file, int line, const char *msg, ...);
 void assert(int cond, const char *file, int line, const char *condstr);

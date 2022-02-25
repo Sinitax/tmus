@@ -2,14 +2,16 @@
 #include "util.h"
 
 struct ref *
-ref_init(void *data)
+ref_alloc(void *data)
 {
 	struct ref *ref;
 
 	ref = malloc(sizeof(struct ref));
 	if (!ref) return NULL;
+
 	ref->link = LINK_EMPTY;
 	ref->data = data;
+
 	return ref;
 }
 

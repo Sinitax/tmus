@@ -14,17 +14,11 @@ track_alloc(const char *dir, const char *fname, int fid)
 	track = malloc(sizeof(struct track));
 	ASSERT(track != NULL);
 
-	track->fname = strdup(fname);
-	ASSERT(track->fname != NULL);
-
 	track->fpath = aprintf("%s/%s", dir, fname);
 	ASSERT(track->fpath != NULL);
 
-	len = mbstowcs(NULL, track->fname, 0);
-	ASSERT(len >= 0);
-	track->name = calloc(len + 1, sizeof(wchar_t));
+	track->name = strdup(fname);
 	ASSERT(track->name != NULL);
-	mbstowcs(track->name, track->fname, len + 1);
 
 	track->fid = fid;
 
@@ -36,11 +30,8 @@ track_alloc(const char *dir, const char *fname, int fid)
 void
 track_free(struct track *t)
 {
-	free(t->fname);
 	free(t->fpath);
 	free(t->name);
-
 	refs_free(&t->tags);
-
 	free(t);
 }

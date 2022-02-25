@@ -1,4 +1,5 @@
 #define NCURSES_WIDECHAR 1
+#define _GNU_SOURCE
 
 #include "tui.h"
 
@@ -11,14 +12,14 @@
 #include "listnav.h"
 #include "ref.h"
 #include "style.h"
+#include "strbuf.h"
 #include "util.h"
 
 #include <ncurses.h>
 
+#include <ctype.h>
+#include <string.h>
 #include <unistd.h>
-
-#include <wchar.h>
-#include <wctype.h>
 
 #undef KEY_ENTER
 #define KEY_ENTER '\n'
@@ -35,27 +36,28 @@ enum {
 	IMODE_COUNT
 };
 
-typedef wchar_t *(*completion_gen)(const wchar_t *text, int fwd, int state);
+typedef char *(*completion_gen)(const char *text, int fwd, int state);
 
 static void pane_title(struct pane *pane, const char *title, int highlight);
 
-static wchar_t *command_name_gen(const wchar_t *text, int fwd, int state);
-static wchar_t *track_name_gen(const wchar_t *text, int fwd, int state);
-static wchar_t *tag_name_gen(const wchar_t *text, int fwd, int state);
+static char *command_name_gen(const char *text, int fwd, int state);
+static char *track_name_gen(const char *text, int fwd, int state);
+static char *tag_name_gen(const char *text, int fwd, int state);
 
 static void toggle_current_tag(void);
-static int tag_pane_input(wint_t c);
+
+static bool tag_pane_input(wint_t c);
 static void tag_pane_vis(struct pane *pane, int sel);
 
-static int track_pane_input(wint_t c);
+static bool track_pane_input(wint_t c);
 static void track_pane_vis(struct pane *pane, int sel);
 
-static bool run_cmd(const wchar_t *name);
-static bool play_track(const wchar_t *name);
-static bool select_track(const wchar_t *name);
-static bool select_tag(const wchar_t *name);
+static bool run_cmd(const char *name);
+static bool play_track(const char *name);
+static bool select_track(const char *name);
+static bool select_tag(const char *name);
 
-static int cmd_pane_input(wint_t c);
+static bool cmd_pane_input(wint_t c);
 static void cmd_pane_vis(struct pane *pane, int sel);
 
 static void queue_hover(void);
@@ -125,36 +127,41 @@ pane_title(struct pane *pane, const char *title, int highlight)
 	style_off(pane->win, STYLE_TITLE);
 }
 
-wchar_t *
-command_name_gen(const wchar_t *text, int fwd, int reset)
+char *
+command_name_gen(const char *text, int fwd, int reset)
 {
 	static int index, len;
+	char *dup;
 	int dir;
 
 	dir = fwd ? 1 : -1;
 
 	if (reset) {
 		index = 0;
-		len = wcslen(text);
+		len = strlen(text);
 	} else if (index >= -1 && index <= command_count) {
 		index += dir;
 	}
 
 	while (index >= 0 && index < command_count) {
-		if (!wcsncmp(commands[index].name, text, len))
-			return wcsdup(commands[index].name);
+		if (!strncmp(commands[index].name, text, len)) {
+			dup = strdup(commands[index].name);
+			OOM_CHECK(dup);
+			return dup;
+		}
 		index += dir;
 	}
 
 	return NULL;
 }
 
-wchar_t *
-track_name_gen(const wchar_t *text, int fwd, int reset)
+char *
+track_name_gen(const char *text, int fwd, int reset)
 {
 	static struct link *cur;
 	struct link *iter;
 	struct track *track;
+	char *dup;
 
 	if (reset) {
 		cur = tracks.head.next;
@@ -165,9 +172,11 @@ track_name_gen(const wchar_t *text, int fwd, int reset)
 
 	while (LIST_INNER(iter)) {
 		track = UPCAST(iter, struct ref)->data;
-		if (wcscasestr(track->name, text)) {
+		if (strcasestr(track->name, text)) {
 			cur = iter;
-			return wcsdup(track->name);
+			dup = strdup(track->name);
+			OOM_CHECK(dup);
+			return dup;
 		}
 		iter = fwd ? iter->next : iter->prev;
 	}
@@ -175,12 +184,13 @@ track_name_gen(const wchar_t *text, int fwd, int reset)
 	return NULL;
 }
 
-wchar_t *
-tag_name_gen(const wchar_t *text, int fwd, int reset)
+char *
+tag_name_gen(const char *text, int fwd, int reset)
 {
 	static struct link *cur;
 	struct link *iter;
 	struct tag *tag;
+	char *dup;
 
 	if (reset) {
 		cur = tags.head.next;
@@ -191,9 +201,11 @@ tag_name_gen(const wchar_t *text, int fwd, int reset)
 
 	while (LIST_INNER(iter)) {
 		tag = UPCAST(iter, struct tag);
-		if (wcscasestr(tag->name, text)) {
+		if (strcasestr(tag->name, text)) {
 			cur = iter;
-			return wcsdup(tag->name);
+			dup = strdup(tag->name);
+			OOM_CHECK(dup);
+			return dup;
 		}
 		iter = fwd ? iter->next : iter->prev;
 	}
@@ -220,7 +232,7 @@ toggle_current_tag(void)
 	if (refs_incl(&tags_sel, tag)) {
 		refs_rm(&tags_sel, tag);
 	} else {
-		ref = ref_init(tag);
+		ref = ref_alloc(tag);
 		list_push_back(&tags_sel, LINK(ref));
 	}
 
@@ -229,36 +241,36 @@ toggle_current_tag(void)
 	for (LIST_ITER(&tags_sel, link)) {
 		tag = UPCAST(link, struct ref)->data;
 		for (LIST_ITER(&tag->tracks, iter)) {
-			ref = ref_init(UPCAST(iter, struct ref)->data);
+			ref = ref_alloc(UPCAST(iter, struct ref)->data);
 			ASSERT(ref != NULL);
 			list_push_back(&player.playlist, LINK(ref));
 		}
 	}
 }
 
-int
+bool
 tag_pane_input(wint_t c)
 {
 	switch (c) {
 	case KEY_UP:
 		listnav_update_sel(&tag_nav, tag_nav.sel - 1);
-		return 1;
+		return true;
 	case KEY_DOWN:
 		listnav_update_sel(&tag_nav, tag_nav.sel + 1);
-		return 1;
+		return true;
 	case KEY_SPACE:
 		toggle_current_tag();
-		return 1;
+		return true;
 	case KEY_ENTER:
 		refs_free(&tags_sel);
 		toggle_current_tag();
-		return 1;
+		return true;
 	case KEY_PPAGE:
 		listnav_update_sel(&tag_nav, tag_nav.sel - tag_nav.wlen / 2);
-		return 1;
+		return true;
 	case KEY_NPAGE:
 		listnav_update_sel(&tag_nav, tag_nav.sel + tag_nav.wlen / 2);
-		return 1;
+		return true;
 	case 'g':
 		listnav_update_sel(&tag_nav, 0);
 		break;
@@ -267,7 +279,7 @@ tag_pane_input(wint_t c)
 		break;
 	}
 
-	return 0;
+	return false;
 }
 
 void
@@ -301,8 +313,7 @@ tag_pane_vis(struct pane *pane, int sel)
 		else if (index == tag_nav.sel)
 			style_on(pane->win, STYLE_PREV);
 
-		wmove(pane->win, 1 + index - tag_nav.wmin, 0);
-		wprintw(pane->win, "%-*.*ls", pane->w, pane->w, tag->name);
+		pane_writeln(pane, 1 + index - tag_nav.wmin, tag->name);
 
 		if (sel && tagsel && index == tag_nav.sel)
 			style_off(pane->win, STYLE_ITEM_HOVER_SEL);
@@ -315,7 +326,7 @@ tag_pane_vis(struct pane *pane, int sel)
 	}
 }
 
-int
+bool
 track_pane_input(wint_t c)
 {
 	struct link *link;
@@ -324,24 +335,24 @@ track_pane_input(wint_t c)
 	switch (c) {
 	case KEY_UP:
 		listnav_update_sel(&track_nav, track_nav.sel - 1);
-		return 1;
+		return true;
 	case KEY_DOWN:
 		listnav_update_sel(&track_nav, track_nav.sel + 1);
-		return 1;
+		return true;
 	case KEY_ENTER:
 		link = list_at(tracks_vis, track_nav.sel);
-		if (!link) return 1;
+		if (!link) return true;
 		track = UPCAST(link, struct ref)->data;
 		player_play_track(track);
-		return 1;
+		return true;
 	case KEY_PPAGE:
 		listnav_update_sel(&track_nav,
 			track_nav.sel - track_nav.wlen / 2);
-		return 1;
+		return true;
 	case KEY_NPAGE:
 		listnav_update_sel(&track_nav,
 			track_nav.sel + track_nav.wlen / 2);
-		return 1;
+		return true;
 	case 'g':
 		listnav_update_sel(&track_nav, 0);
 		break;
@@ -350,7 +361,7 @@ track_pane_input(wint_t c)
 		break;
 	}
 
-	return 0;
+	return false;
 }
 
 void
@@ -384,8 +395,7 @@ track_pane_vis(struct pane *pane, int sel)
 		else if (index == track_nav.sel)
 			style_on(pane->win, STYLE_PREV);
 
-		wmove(pane->win, 1 + index - track_nav.wmin, 0);
-		wprintw(pane->win, "%-*.*ls", pane->w, pane->w, track->name);
+		pane_writeln(pane, 1 + index - track_nav.wmin, track->name);
 
 		if (sel && index == track_nav.sel && track == player.track)
 			style_off(pane->win, STYLE_ITEM_HOVER_SEL);
@@ -399,35 +409,44 @@ track_pane_vis(struct pane *pane, int sel)
 }
 
 bool
-run_cmd(const wchar_t *query)
+run_cmd(const char *query)
 {
-	bool success;
+	bool success, found;
 
-	success = cmd_run(query);
+	success = cmd_run(query, &found);
 	if (!success && !cmd_status)
-		CMD_SET_STATUS("Command Failed!");
-	return true;
+		CMD_SET_STATUS("FAIL");
+	else if (success && !cmd_status)
+		CMD_SET_STATUS("OK");
+
+	return found;
 }
 
 bool
-play_track(const wchar_t *query)
+play_track(const char *query)
 {
 	struct track *track;
 	struct link *iter;
+	int fid;
 
+	fid = -1;
 	for (LIST_ITER(&tracks, iter)) {
 		track = UPCAST(iter, struct ref)->data;
-		if (!wcscmp(track->name, query)) {
+		if (fid == track->fid) continue;
+
+		if (!strcmp(track->name, query)) {
 			player_play_track(track);
 			return true;
 		}
+
+		fid = track->fid;
 	}
 
 	return false;
 }
 
 bool
-select_track(const wchar_t *query)
+select_track(const char *query)
 {
 	struct track *track;
 	struct link *link;
@@ -436,7 +455,7 @@ select_track(const wchar_t *query)
 	index = 0;
 	for (LIST_ITER(tracks_vis, link)) {
 		track = UPCAST(link, struct ref)->data;
-		if (!wcscmp(track->name, query)) {
+		if (!strcmp(track->name, query)) {
 			listnav_update_sel(&track_nav, index);
 			pane_after_cmd = track_pane;
 			return true;
@@ -448,7 +467,7 @@ select_track(const wchar_t *query)
 }
 
 bool
-select_tag(const wchar_t *query)
+select_tag(const char *query)
 {
 	struct tag *tag;
 	struct link *iter;
@@ -458,7 +477,7 @@ select_tag(const wchar_t *query)
 	for (LIST_ITER(&tags, iter)) {
 		index += 1;
 		tag = UPCAST(iter, struct tag);
-		if (!wcscmp(tag->name, query)) {
+		if (!strcmp(tag->name, query)) {
 			listnav_update_sel(&tag_nav, index);
 			pane_after_cmd = tag_pane;
 			return true;
@@ -468,19 +487,19 @@ select_tag(const wchar_t *query)
 	return false;
 }
 
-int
+bool
 cmd_pane_input(wint_t c)
 {
-	wchar_t *res;
+	char *res;
 	int match;
 
 	switch (c) {
 	case KEY_ESC:
-		match = wcscmp(completion_query.buf, history->input->buf);
+		match = strcmp(completion_query.buf, history->input->buf);
 		if (!completion_reset && match) {
 			inputln_copy(history->input, &completion_query);
 		} else if (history->sel == history->input) {
-			inputln_replace(history->input, L"");
+			inputln_replace(history->input, "");
 			pane_sel = pane_after_cmd;
 		} else {
 			history->sel = history->input;
@@ -550,82 +569,61 @@ cmd_pane_input(wint_t c)
 		completion_reset = 1;
 		break;
 	default:
-		if (!iswprint(c)) return 0;
+		/* TODO: wide char input support */
+		if (!isprint(c)) return 0;
 		inputln_addch(history->sel, c);
 		completion_reset = 1;
 		break;
 	}
 
-	return 1; /* grab everything */
+	return true; /* grab everything */
 }
 
 void
 cmd_pane_vis(struct pane *pane, int sel)
 {
-	static wchar_t *linebuf = NULL;
-	static int linecap = 0;
+	static struct strbuf line = { 0 };
 	struct inputln *cmd;
 	struct link *iter;
-	wchar_t *line, *end;
 	int index, offset;
 
 	werase(pane->win);
-
-	/* static line buffer for perf */
-	if (pane->w > linecap) {
-		linecap = MAX(linecap, pane->w);
-		linebuf = realloc(linebuf, linecap * sizeof(wchar_t));
-	}
-	end = linebuf + linecap;
 
 	/* track name */
 	style_on(pane->win, STYLE_TITLE);
 	pane_clearln(pane, 0);
 	if (player.loaded && player.track) {
-		swprintf(linebuf, linecap, L"%ls", player.track->name);
-		mvwaddwstr(pane->win, 0, 1, linebuf);
+		strbuf_clear(&line);
+		strbuf_append(&line, " %s", player.track->name);
+		pane_writeln(pane, 0, line.buf);
 	}
 	style_off(pane->win, STYLE_TITLE);
 
 	if (player.loaded) {
 		/* status line */
-		line = linebuf;
-		line += swprintf(line, end - line, L"%c ",
-			player_state_chars[player.state]);
-		line += swprintf(line, end - line, L"%s / ",
-			timestr(player.time_pos));
-		line += swprintf(line, end - line, L"%s",
-			timestr(player.time_end));
+		strbuf_clear(&line);
+		strbuf_append(&line, "%c ", player_state_chars[player.state]);
+		strbuf_append(&line, "%s / ", timestr(player.time_pos));
+		strbuf_append(&line, "%s", timestr(player.time_end));
 
-		if (player.volume >= 0) {
-			line += swprintf(line, end - line, L" - vol: %u%%",
-				player.volume);
-		}
+		if (player.volume >= 0)
+			strbuf_append(&line, " - vol: %u%%", player.volume);
 
-		if (player.status) {
-			line += swprintf(line, end - line, L" | [PLAYER] %s",
-				player.status);
-		}
+		if (player.status)
+			strbuf_append(&line, " | [PLAYER] %s", player.status);
 
-		if (list_len(&player.queue)) {
-			line += swprintf(line, end - line,
-				L" | [QUEUE] %i tracks",
+		if (list_len(&player.queue) > 0)
+			strbuf_append(&line, " | [QUEUE] %i tracks",
 				list_len(&player.queue));
-		}
 
 		ATTR_ON(pane->win, A_REVERSE);
-		pane_clearln(pane, 1);
-		mvwaddwstr(pane->win, 1, 0, linebuf);
+		pane_writeln(pane, 1, line.buf);
 		ATTR_OFF(pane->win, A_REVERSE);
 	} else if (player.status) {
 		/* player message */
-		line = linebuf;
-		line += swprintf(line, linecap, L"[PLAYER] %s", player.status);
-		line += swprintf(line, end - line, L"%*.*s",
-				pane->w, pane->w, L" ");
-
-		pane_clearln(pane, 1);
-		mvwaddwstr(pane->win, 1, 0, linebuf);
+		strbuf_clear(&line);
+		strbuf_append(&line, "[PLAYER] %s", player.status);
+		pane_writeln(pane, 1, line.buf);
 	}
 
 	/* status bits on right of status line */
@@ -638,7 +636,7 @@ cmd_pane_vis(struct pane *pane, int sel)
 
 	if (sel || cmd_show) {
 		/* cmd and search input */
-		line = linebuf;
+		strbuf_clear(&line);
 
 		free(cmd_status);
 		cmd_status = NULL;
@@ -651,18 +649,15 @@ cmd_pane_vis(struct pane *pane, int sel)
 					break;
 				index += 1;
 			}
-			line += swprintf(line, end - line, L"[%i] ",
-				iter ? index : -1);
+			strbuf_append(&line, "[%i] ", iter ? index : -1);
 		} else {
-			line += swprintf(line, end - line, L"%c",
-				imode_prefix[cmd_input_mode]);
+			strbuf_append(&line, "%c", imode_prefix[cmd_input_mode]);
 		}
-		offset = wcslen(linebuf);
+		offset = strlen(line.buf);
 
-		line += swprintf(line, end - line, L"%ls", cmd->buf);
+		strbuf_append(&line, "%s", cmd->buf);
 
-		pane_clearln(pane, 2);
-		mvwaddwstr(pane->win, 2, 0, linebuf);
+		pane_writeln(pane, 2, line.buf);
 
 		if (sel) { /* show cursor in text */
 			ATTR_ON(pane->win, A_REVERSE);
@@ -672,8 +667,9 @@ cmd_pane_vis(struct pane *pane, int sel)
 			ATTR_OFF(pane->win, A_REVERSE);
 		}
 	} else if (cmd_status) {
-		pane_clearln(pane, 2);
-		mvwprintw(pane->win, 2, 0, " %.*s", pane->w - 1, cmd_status);
+		strbuf_clear(&line);
+		strbuf_append(&line, " %s", cmd_status);
+		pane_writeln(pane, 2, line.buf);
 	}
 }
 
@@ -888,7 +884,7 @@ tui_resize(void)
 	leftw = 0;
 	for (LIST_ITER(&tags, iter)) {
 		tag = UPCAST(iter, struct tag);
-		leftw = MAX(leftw, wcslen(tag->name));
+		leftw = MAX(leftw, strlen(tag->name));
 	}
 	leftw = MAX(leftw + 1, 0.2f * scrw);
 
@@ -939,14 +935,16 @@ tui_deinit(void)
 {
 	free(cmd_status);
 
-	pane_free(&pane_left);
-	pane_free(&pane_right);
-	pane_free(&pane_bot);
+	inputln_deinit(&completion_query);
 
-	history_free(&track_play_history);
-	history_free(&track_select_history);
-	history_free(&tag_select_history);
-	history_free(&command_history);
+	pane_deinit(&pane_left);
+	pane_deinit(&pane_right);
+	pane_deinit(&pane_bot);
+
+	history_deinit(&track_play_history);
+	history_deinit(&track_select_history);
+	history_deinit(&tag_select_history);
+	history_deinit(&command_history);
 
 	if (!isendwin()) endwin();
 }

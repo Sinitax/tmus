@@ -1,7 +1,6 @@
 #pragma once
 
-#include <wchar.h>
-
+#include <stdlib.h>
 #include <stdbool.h>
 
 #define CMD_SET_STATUS(...) do { \
@@ -9,21 +8,21 @@
 		cmd_status = aprintf(__VA_ARGS__); \
 	} while (0)
 
-typedef bool (*cmd_func)(const wchar_t *args);
+typedef bool (*cmd_func)(const char *args);
 
 struct cmd {
-	const wchar_t *name;
+	const char *name;
 	cmd_func func;
 };
 
 void cmd_init(void);
 void cmd_deinit(void);
 
-bool cmd_run(const wchar_t *name);
+bool cmd_run(const char *name, bool *found);
 bool cmd_rerun(void);
 
-const struct cmd *cmd_get(const wchar_t *name);
-const struct cmd *cmd_find(const wchar_t *name);
+const struct cmd *cmd_get(const char *name);
+const struct cmd *cmd_find(const char *name);
 
 extern const struct cmd commands[];
 extern const size_t command_count;

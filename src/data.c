@@ -1,11 +1,13 @@
 #include "data.h"
 
+#include "player.h"
 #include "list.h"
 #include "log.h"
 #include "ref.h"
 #include "track.h"
 #include "tag.h"
 
+#include <fts.h>
 #include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -48,7 +50,8 @@ data_load(void)
 		OOM_CHECK(path);
 
 		if (!stat(path, &st) && S_ISDIR(st.st_mode)) {
-			tag = tag_init(datadir, ent->d_name);
+			tag = tag_alloc(datadir, ent->d_name);
+			OOM_CHECK(tag);
 			tracks_load(tag);
 			list_push_back(&tags, LINK(tag));
 		}
@@ -57,8 +60,7 @@ data_load(void)
 	}
 	closedir(dir);
 
-	/* TODO: ensure this is ok and remove */
-	ASSERT(!list_empty(&tags));
+	list_sort(&tracks, track_fid_compare);
 }
 
 void
@@ -105,13 +107,21 @@ get_fid(const char *path)
 	return stat(path, &st) ? -1 : st.st_ino;
 }
 
+int
+track_fid_compare(struct link *a, struct link *b)
+{
+	struct track *ta, *tb;
+
+	ta = UPCAST(a, struct ref)->data;
+	tb = UPCAST(b, struct ref)->data;
+
+	return ta->fid - tb->fid;
+}
+
 void
 index_update(struct tag *tag)
 {
-	struct track *track, *track_iter;
 	struct dirent *ent;
-	struct link *iter;
-	struct ref *ref;
 	struct stat st;
 	char *path;
 	FILE *file;
@@ -152,6 +162,80 @@ index_update(struct tag *tag)
 	fclose(file);
 }
 
+bool
+tracks_update(struct tag *tag)
+{
+	struct dirent *ent;
+	struct stat st;
+	struct link *link;
+	struct ref *ref;
+	struct track *track;
+	char *path;
+	DIR *dir;
+	int fid;
+
+	dir = opendir(tag->fpath);
+	if (!dir) return false;
+
+	while (!list_empty(&tag->tracks)) {
+		link = list_pop_front(&tag->tracks);
+		ref = UPCAST(link, struct ref);
+		track = ref->data;
+		ref_free(ref);
+		for (LIST_ITER(&tracks, link)) {
+			ref = UPCAST(link, struct ref);
+			if (ref->data == track) {
+				link = link_pop(link);
+				ref_free(ref);
+				break;
+			}
+		}
+		if (player.track == track)
+			player.track = NULL;
+		track_free(track);
+	}
+
+	while ((ent = readdir(dir))) {
+		if (!strcmp(ent->d_name, "."))
+			continue;
+		if (!strcmp(ent->d_name, ".."))
+			continue;
+		if (!strcmp(ent->d_name, "index"))
+			continue;
+
+		/* skip files without extension */
+		if (!strchr(ent->d_name + 1, '.'))
+			continue;
+
+		path = aprintf("%s/%s", tag->fpath, ent->d_name);
+		OOM_CHECK(path);
+
+		fid = get_fid(path);
+
+		track = track_alloc(tag->fpath, ent->d_name, fid);
+		OOM_CHECK(track);
+
+		ref = ref_alloc(tag);
+		OOM_CHECK(ref);
+		list_push_back(&track->tags, LINK(ref));
+
+		ref = ref_alloc(track);
+		OOM_CHECK(ref);
+		list_push_back(&tag->tracks, LINK(ref));
+
+		ref = ref_alloc(track);
+		OOM_CHECK(ref);
+		list_push_back(&tracks, LINK(ref));
+
+		free(path);
+	}
+
+	list_sort(&tracks, track_fid_compare);
+
+	closedir(dir);
+	return true;
+}
+
 void
 tracks_load(struct tag *tag)
 {
@@ -163,7 +247,6 @@ tracks_load(struct tag *tag)
 	char *index_path;
 	char *track_name, *sep;
 	int track_fid;
-	bool new_track;
 	FILE *file;
 
 	index_path = aprintf("%s/index", tag->fpath);
@@ -188,26 +271,17 @@ tracks_load(struct tag *tag)
 		track_name = sep + 1;
 		track = track_alloc(tag->fpath, track_name, track_fid);
 
-		ref = ref_init(tag);
+		ref = ref_alloc(tag);
 		OOM_CHECK(ref);
 		list_push_back(&track->tags, LINK(ref));
 
-		ref = ref_init(track);
+		ref = ref_alloc(track);
 		OOM_CHECK(ref);
 		list_push_back(&tag->tracks, LINK(ref));
 
-		new_track = true;
-		for (LIST_ITER(&tracks, link)) {
-			track2 = UPCAST(link, struct ref)->data;
-			if (track->fid > 0 && track->fid == track2->fid)
-				new_track = false;
-		}
-
-		if (new_track) {
-			ref = ref_init(track);
-			OOM_CHECK(ref);
-			list_push_back(&tracks, LINK(ref));
-		}
+		ref = ref_alloc(track);
+		OOM_CHECK(ref);
+		list_push_back(&tracks, LINK(ref));
 	}
 
 	fclose(file);
@@ -228,65 +302,122 @@ tracks_save(struct tag *tag)
 	OOM_CHECK(index_path);
 
 	file = fopen(index_path, "w+");
-	if (!file) ERROR("Failed to write to index file: %s\n", index_path);
+	if (!file) {
+		fprintf(stderr, "Failed to write to index file: %s\n",
+			index_path);
+		free(index_path);
+		return;
+	}
 
 	for (LIST_ITER(&tag->tracks, link)) {
 		track = UPCAST(link, struct ref)->data;
-		fprintf(file, "%i:%s\n", track->fid, track->fname);
+		fprintf(file, "%i:%s\n", track->fid, track->name);
 	}
 
 	fclose(file);
 	free(index_path);
 }
 
-void
-rm_file(const char *path)
+bool
+make_dir(const char *path)
 {
-	ASSERT(unlink(path) == 0);
+	return mkdir(path, S_IRWXU | S_IRWXG) == 0;
 }
 
-void
+bool
+rm_dir(const char *path, bool recursive)
+{
+	char *files[] = { (char *) path, NULL };
+	FTSENT *ent;
+	FTS *fts;
+	int flags;
+
+	if (recursive) {
+		flags = FTS_NOCHDIR | FTS_PHYSICAL | FTS_XDEV;
+		fts = fts_open(files, flags, NULL);
+		if (!fts) return false;
+
+		while ((ent = fts_read(fts))) {
+			switch (ent->fts_info) {
+			case FTS_NS:
+			case FTS_DNR:
+			case FTS_ERR:
+				fts_close(fts);
+				return false;
+			case FTS_D:
+				break;
+			default:
+				if (remove(ent->fts_accpath) < 0) {
+					fts_close(fts);
+					return false;
+				}
+				break;
+			}
+		}
+
+		fts_close(fts);
+	} else {
+		if (rmdir(path) != 0)
+			return false;
+	}
+
+	return true;
+}
+
+bool
+rm_file(const char *path)
+{
+	return unlink(path) == 0;
+}
+
+bool
 copy_file(const char *src, const char *dst)
 {
 	FILE *in, *out;
 	char buf[4096];
 	int len, nread;
+	bool ok;
+
+	ok = false;
+	in = out = NULL;
 
 	in = fopen(src, "r");
-	if (in == NULL)
-		ERROR("Failed to read from file: %s\n", src);
+	if (in == NULL) goto cleanup;
 
 	out = fopen(dst, "w+");
-	if (out == NULL)
-		ERROR("Failed to write to file: %s\n", dst);
+	if (out == NULL) goto cleanup;
 
 	while ((nread = fread(buf, 1, sizeof(buf), in)) > 0) {
 		fwrite(buf, 1, nread, out);
 	}
 
 	if (nread < 0)
-		ERROR("Failed to copy file from %s to %s\n", src, dst);
+		goto cleanup;
 
-	fclose(in);
-	fclose(out);
+	ok = true;
+
+cleanup:
+	if (in) fclose(in);
+	if (out) fclose(out);
+
+	return ok;
 }
 
-void
+bool
 move_file(const char *src, const char *dst)
 {
-	copy_file(src, dst);
-	rm_file(src);
+	return rename(src, dst) == 0;
 }
 
 struct tag *
-tag_find(const wchar_t *query)
+tag_find(const char *query)
 {
 	struct link *iter;
 	struct tag *tag;
 
 	for (LIST_ITER(&tags, iter)) {
 		tag = UPCAST(iter, struct tag);
-		if (!wcscmp(tag->name, query)) {
+		if (!strcmp(tag->name, query)) {
 			return tag;
 		}
 	}

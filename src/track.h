@@ -4,9 +4,8 @@
 #include "util.h"
 
 struct track {
-	wchar_t *name;
+	char *name, *fpath;
 	struct list tags;
-	char *fname, *fpath;
 	int fid;
 };
 

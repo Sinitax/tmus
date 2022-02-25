@@ -1,18 +1,14 @@
 #pragma once
 
 #include "list.h"
-#include "util.h"
 
 struct tag {
-	wchar_t *name;
-	char *fname, *fpath;
-
-	char *new_fname;
+	char *name, *fpath;
 
 	struct list tracks;
 
 	struct link link;
 };
 
-struct tag *tag_init(const char *path, const char *fname);
+struct tag *tag_alloc(const char *path, const char *fname);
 void tag_free(struct tag *tag);

@@ -1,5 +1,13 @@
+#define _XOPEN_SOURCE
+
 #include "pane.h"
+
 #include "util.h"
+#include "strbuf.h"
+
+#include <stdlib.h>
+#include <string.h>
+#include <wchar.h>
 
 void
 pane_init(struct pane *pane, pane_handler handle, pane_updater update)
@@ -8,6 +16,12 @@ pane_init(struct pane *pane, pane_handler handle, pane_updater update)
 	ASSERT(pane->win != NULL);
 	pane->handle = handle;
 	pane->update = update;
+}
+
+void
+pane_deinit(struct pane *pane)
+{
+	delwin(pane->win);
 }
 
 void
@@ -29,18 +43,20 @@ pane_resize(struct pane *pane, int sx, int sy, int ex, int ey)
 }
 
 void
-pane_clearln(struct pane *pane, int y)
+pane_clearln(struct pane *pane, int row)
 {
 	int i;
 
-	wmove(pane->win, y, 0);
+	wmove(pane->win, row, 0);
 	for (i = 0; i < pane->w; i++)
 		waddch(pane->win, ' ');
 }
 
 void
-pane_free(struct pane *pane)
+pane_writeln(struct pane *pane, int row, const char *str)
 {
-	delwin(pane->win);
+	pane_clearln(pane, row);
+	wmove(pane->win, row, 0);
+	waddstr(pane->win, str);
 }
 

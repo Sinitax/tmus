@@ -5,7 +5,6 @@
 #include "pane.h"
 
 #include <stdbool.h>
-#include <wchar.h>
 
 void tui_init(void);
 void tui_deinit(void);

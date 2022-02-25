@@ -217,7 +217,7 @@ player_add_history(struct track *track)
 		if (ref->data == track) return;
 	}
 
-	ref = ref_init(track);
+	ref = ref_alloc(track);
 	list_push_back(&player.history, LINK(ref));
 }
 

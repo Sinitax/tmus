@@ -8,7 +8,7 @@ struct ref {
 	struct link link;
 };
 
-struct ref *ref_init(void *data);
+struct ref *ref_alloc(void *data);
 void ref_free(void *ref);
 
 void refs_free(struct list *list);
