@@ -6,6 +6,7 @@
 #include "ref.h"
 #include "track.h"
 #include "tag.h"
+#include "tui.h"
 
 #include <fts.h>
 #include <dirent.h>
@@ -316,6 +317,44 @@ tracks_save(struct tag *tag)
 
 	fclose(file);
 	free(index_path);
+}
+
+bool
+track_rm(struct track *track)
+{
+	struct link *link;
+	struct ref *ref;
+	struct tag *tag;
+	bool found;
+
+	if (!rm_file(track->fpath)) {
+		CMD_SET_STATUS("Failed to remove track");
+		return false;
+	}
+
+	found = false;
+	for (LIST_ITER(&tracks, link)) {
+		ref = UPCAST(link, struct ref);
+		if (ref->data == track) {
+			link_pop(link);
+			ref_free(ref);
+			found = true;
+			break;
+		}
+	}
+
+	for (LIST_ITER(&track->tags, link)) {
+		ref = UPCAST(link, struct ref);
+		tag = ref->data;
+		refs_rm(&tag->tracks, track);
+	}
+
+	if (player.track == track)
+		player.track = NULL;
+
+	track_free(track);
+
+	return true;
 }
 
 bool

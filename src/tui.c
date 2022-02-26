@@ -331,6 +331,7 @@ track_pane_input(wint_t c)
 {
 	struct link *link;
 	struct track *track;
+	int index;
 
 	switch (c) {
 	case KEY_UP:
@@ -358,6 +359,23 @@ track_pane_input(wint_t c)
 		break;
 	case 'G':
 		listnav_update_sel(&track_nav, track_nav.max - 1);
+		break;
+	case 'n':
+		index = 0;
+		for (LIST_ITER(tracks_vis, link)) {
+			track = UPCAST(link, struct ref)->data;
+			if (track == player.track) {
+				listnav_update_sel(&track_nav, index);
+				break;
+			}
+			index += 1;
+		}
+		break;
+	case 'D':
+		link = list_at(tracks_vis, track_nav.sel);
+		ASSERT(link != NULL);
+		track = UPCAST(link, struct ref)->data;
+		track_rm(track);
 		break;
 	}
 

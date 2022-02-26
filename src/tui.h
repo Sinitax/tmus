@@ -6,6 +6,11 @@
 
 #include <stdbool.h>
 
+#define CMD_SET_STATUS(...) do { \
+		free(cmd_status); \
+		cmd_status = aprintf(__VA_ARGS__); \
+	} while (0)
+
 void tui_init(void);
 void tui_deinit(void);
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tag.h"
+#include "track.h"
 
 void data_load(void);
 void data_save(void);
@@ -12,6 +13,8 @@ void index_update(struct tag *tag);
 bool tracks_update(struct tag *tag);
 void tracks_load(struct tag *tag);
 void tracks_save(struct tag *tag);
+
+bool track_rm(struct track *track);
 
 bool make_dir(const char *path);
 bool rm_dir(const char *path, bool recursive);
