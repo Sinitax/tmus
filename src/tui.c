@@ -237,15 +237,7 @@ toggle_current_tag(void)
 	}
 
 	/* rebuild the full playlist */
-	refs_free(&player.playlist);
-	for (LIST_ITER(&tags_sel, link)) {
-		tag = UPCAST(link, struct ref)->data;
-		for (LIST_ITER(&tag->tracks, iter)) {
-			ref = ref_alloc(UPCAST(iter, struct ref)->data);
-			ASSERT(ref != NULL);
-			list_push_back(&player.playlist, LINK(ref));
-		}
-	}
+	playlist_update();
 }
 
 bool
@@ -755,11 +747,9 @@ main_input(wint_t c)
 	case L'c':
 		player_toggle_pause();
 		break;
-	case L'n':
 	case L'>':
 		player_next();
 		break;
-	case L'p':
 	case L'<':
 		player_prev();
 		break;

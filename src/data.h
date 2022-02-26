@@ -11,6 +11,8 @@ int get_fid(const char *path);
 int track_fid_compare(struct link *a, struct link *b);
 void index_update(struct tag *tag);
 bool tracks_update(struct tag *tag);
+void playlist_update(void);
+
 void tracks_load(struct tag *tag);
 void tracks_save(struct tag *tag);
 

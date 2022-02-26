@@ -71,6 +71,8 @@ cmd_move(const char *name)
 	link_pop(link);
 	list_push_back(&tag->tracks, link);
 
+	playlist_update();
+
 	return 1;
 }
 

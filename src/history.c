@@ -234,7 +234,7 @@ inputln_replace(struct inputln *line, const char *str)
 	line->len = strlen(str);
 	if (line->cap <= line->len)
 		inputln_resize(line, line->len + 1);
-	strncpy(line->buf, str, line->len);
+	strncpy(line->buf, str, line->len + 1);
 	line->cur = line->len;
 }
 

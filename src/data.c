@@ -233,8 +233,30 @@ tracks_update(struct tag *tag)
 
 	list_sort(&tracks, track_fid_compare);
 
+	playlist_update();
+
 	closedir(dir);
 	return true;
+}
+
+void
+playlist_update(void)
+{
+	struct link *link, *link2;
+	struct track *track;
+	struct ref *ref;
+	struct tag *tag;
+
+	refs_free(&player.playlist);
+	for (LIST_ITER(&tags_sel, link)) {
+		tag = UPCAST(link, struct ref)->data;
+		for (LIST_ITER(&tag->tracks, link2)) {
+			track = UPCAST(link2, struct ref)->data;
+			ref = ref_alloc(track);
+			ASSERT(ref != NULL);
+			list_push_back(&player.playlist, LINK(ref));
+		}
+	}
 }
 
 void
@@ -325,29 +347,21 @@ track_rm(struct track *track)
 	struct link *link;
 	struct ref *ref;
 	struct tag *tag;
-	bool found;
 
 	if (!rm_file(track->fpath)) {
 		CMD_SET_STATUS("Failed to remove track");
 		return false;
 	}
 
-	found = false;
-	for (LIST_ITER(&tracks, link)) {
-		ref = UPCAST(link, struct ref);
-		if (ref->data == track) {
-			link_pop(link);
-			ref_free(ref);
-			found = true;
-			break;
-		}
-	}
+	refs_rm(&tracks, track);
 
 	for (LIST_ITER(&track->tags, link)) {
 		ref = UPCAST(link, struct ref);
 		tag = ref->data;
 		refs_rm(&tag->tracks, track);
 	}
+
+	refs_rm(&player.playlist, track);
 
 	if (player.track == track)
 		player.track = NULL;
