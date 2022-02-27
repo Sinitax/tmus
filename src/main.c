@@ -8,7 +8,6 @@
 #include "player.h"
 #include "ref.h"
 #include "style.h"
-#include "tag.h"
 #include "tui.h"
 #include "util.h"
 
@@ -42,10 +41,10 @@ cleanup(int exitcode, void* arg)
 {
 	tui_restore();
 
+	player_deinit();
+
 	data_save();
 	data_free();
-
-	player_deinit();
 
 	dbus_deinit();
 

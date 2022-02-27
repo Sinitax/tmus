@@ -1,9 +1,9 @@
 #include "player.h"
-#include "ref.h"
 
-#include "portaudio.h"
-#include "sndfile.h"
+#include "data.h"
+#include "list.h"
 #include "util.h"
+#include "log.h"
 
 #include <mpd/client.h>
 #include <mpd/song.h>
@@ -81,15 +81,15 @@ mpd_handle_status(int status)
 }
 
 bool
-history_contains(struct track *track, int depth)
+history_contains(struct track *cmp, int depth)
 {
 	struct link *link;
-	struct ref *ref;
+	struct track *track;
 
 	link = list_back(&player.history);
 	while (LIST_INNER(link) && depth-- > 0) {
-		ref = UPCAST(link, struct ref);
-		if (track == ref->data)
+		track = UPCAST(link, struct track, link_hs);
+		if (track == cmp)
 			return true;
 		link = link->prev;
 	}
@@ -102,7 +102,6 @@ playlist_track_lru(int skip)
 {
 	struct track *track;
 	struct link *link;
-	struct ref *ref;
 	int len;
 
 	track = NULL;
@@ -110,8 +109,7 @@ playlist_track_lru(int skip)
 	len = list_len(&player.playlist);
 	link = list_front(&player.playlist);
 	while (skip >= 0 && LIST_INNER(link)) {
-		ref = UPCAST(link, struct ref);
-		track = ref->data;
+		track = UPCAST(link, struct track, link_pl);
 
 		if (!history_contains(track, len - 1))
 			skip -= 1;
@@ -123,102 +121,101 @@ playlist_track_lru(int skip)
 			link = list_front(&player.playlist);
 	}
 
-	PLAYER_STATUS(INFO, "%i, %i", len - 1, skip);
-
 	return track;
+}
+
+struct track *
+player_next_from_playlist(void)
+{
+	struct link *link;
+	int index;
+
+	if (list_empty(&player.playlist))
+		return NULL;
+
+	if (player.track)
+		player_add_history(player.track);
+
+	if (player.shuffle) {
+		index = rand() % list_len(&player.playlist);
+		return playlist_track_lru(index);
+	} else {
+		if (player.track && link_inuse(&player.track->link_pl)) {
+			link = player.track->link_pl.next;
+			if (!link) list_front(&player.playlist);
+		} else {
+			link = list_front(&player.playlist);
+		}
+		return UPCAST(link, struct track, link_pl);
+	}
+
+	return NULL;
 }
 
 void
 player_play_prev(void)
 {
-	struct link *link, *next;
+	struct link *next;
 	struct track *track;
-	struct ref *ref;
 
 	if (list_empty(&player.history))
 		return;
 
-	if (!player.history_sel) {
+	if (!player.track || !link_inuse(&player.track->link_hs)) {
 		next = list_back(&player.history);
-	} else if (LIST_INNER(player.history_sel->prev)) {
-		next = player.history_sel->prev;
+	} else if (LIST_INNER(player.track->link_hs.prev)) {
+		next = player.track->link_hs.prev;
 	} else {
 		return;
 	}
 
-	ref = UPCAST(next, struct ref);
-	player_play_track(ref->data);
-
-	player.history_sel = next;
+	track = UPCAST(next, struct track, link_hs);
+	player_play_track(track);
 }
 
 void
 player_play_next(void)
 {
+	struct track *next_track;
 	struct link *link;
-	struct track *track, *next_track;
-	struct ref *ref;
-	int index, len;
-	int status;
 
 	next_track = NULL;
 
-	link = player.history_sel;
-	if (link && LIST_INNER(link->next)) {
-		player.history_sel = link->next;
-		ref = UPCAST(link->next, struct ref);
-		next_track = ref->data;
+	if (player.track && link_inuse(&player.track->link_hs)
+			&& LIST_INNER(player.track->link_hs.next)) {
+		next_track = UPCAST(player.track->link_hs.next,
+			struct track, link_hs);
+	} else if (!list_empty(&player.queue)) {
+		link = list_pop_front(&player.queue);
+		next_track = UPCAST(link, struct track, link_pq);
 	} else {
-		if (!list_empty(&player.queue)) {
-			link = list_pop_front(&player.queue);
-			ref = UPCAST(link, struct ref);
-			next_track = ref->data;
-			ref_free(ref);
-		} else {
-			if (list_empty(&player.playlist))
-				return;
-
-			if (!player.history_sel) {
-				player_add_history(player.track);
-				player.track = NULL;
-			}
-			player.history_sel = NULL;
-
-			if (player.shuffle) {
-				index = rand() % list_len(&player.playlist);
-				next_track = playlist_track_lru(index + 1);
-				ASSERT(next_track != NULL);
-			} else {
-				link = player.playlist_sel;
-				if (link && LIST_INNER(link->next)) {
-					ref = UPCAST(link->next, struct ref);
-					next_track = ref->data;
-				} else {
-					status = mpd_run_clear(mpd.conn);
-					mpd_handle_status(status);
-					return;
-				}
-			}
-		}
+		next_track = player_next_from_playlist();
 	}
 
+	if (!next_track) goto clear;
+
 	player_play_track(next_track);
+	return;
+
+clear:
+	player.track = NULL;
+	mpd_run_clear(mpd.conn);
 }
 
 void
-player_add_history(struct track *track)
+player_add_history(struct track *new)
 {
 	struct link *link;
-	struct ref *ref;
+	struct track *track;
 
 	link = list_back(&player.history);
 	if (link) {
-		ref = UPCAST(link, struct ref);
-		if (ref->data == track) return;
+		track = UPCAST(link, struct track, link_hs);
+		if (track == new) return;
 	}
 
-	ref = ref_alloc(track);
-	list_push_back(&player.history, LINK(ref));
+	link_pop(&new->link_hs);
+	list_push_back(&player.history, &new->link_hs);
 }
 
 void
@@ -228,19 +225,22 @@ player_init(void)
 	mpd.action = PLAYER_ACTION_NONE;
 	mpd.seek_delay = 0;
 
-	list_init(&player.history);
-	player.history_sel = NULL;
-	list_init(&player.queue);
-	player.track = NULL;
 	list_init(&player.playlist);
-	player.playlist_sel = NULL;
+	list_init(&player.history);
+	list_init(&player.queue);
+
+	player.track = NULL;
+
 	player.loaded = 0;
 	player.autoplay = true;
 	player.shuffle = true;
+
 	player.state = PLAYER_STATE_PAUSED;
 	player.volume = 0;
+
 	player.time_pos = 0;
 	player.time_end = 0;
+
 	player.status = NULL;
 	player.status_lvl = PLAYER_STATUS_MSG_INFO;
 }
@@ -248,13 +248,9 @@ player_init(void)
 void
 player_deinit(void)
 {
-	struct link *iter;
-
-	if (!mpd.conn) return;
-
-	refs_free(&player.queue);
-	refs_free(&player.history);
-	refs_free(&player.playlist);
+	list_clear(&player.playlist);
+	list_clear(&player.queue);
+	list_clear(&player.history);
 	if (player.status) free(player.status);
 
 	if (mpd.conn) mpd_connection_free(mpd.conn);
@@ -265,7 +261,6 @@ player_update(void)
 {
 	struct mpd_status *status;
 	struct mpd_song *current_song;
-	struct ref *ref;
 	bool queue_empty;
 
 	if (!mpd.conn) {
@@ -283,10 +278,8 @@ player_update(void)
 
 	current_song = mpd_run_current_song(mpd.conn);
 	if (!current_song) {
-		if (player.track && !player.history_sel) {
+		if (player.track)
 			player_add_history(player.track);
-			player.track = NULL;
-		}
 
 		queue_empty = list_empty(&player.queue);
 		if (player.loaded && player.autoplay || !queue_empty)
@@ -359,8 +352,6 @@ player_update(void)
 int
 player_play_track(struct track *track)
 {
-	struct link *link;
-	struct ref *ref;
 	int status;
 
 	status = mpd_run_clear(mpd.conn);
@@ -374,22 +365,9 @@ player_play_track(struct track *track)
 	if (mpd_handle_status(status))
 		return PLAYER_STATUS_ERR;
 
-	if (player.track && !player.history_sel) {
+	/* add last track to history */
+	if (player.track && !link_inuse(&player.track->link_hs))
 		player_add_history(player.track);
-		player.track = NULL;
-	}
-
-	player.history_sel = NULL;
-	/* re-assigning history_sel done in calling code */
-
-	player.playlist_sel = NULL;
-	for (LIST_ITER(&player.playlist, link)) {
-		ref = UPCAST(link, struct ref);
-		if (ref->data == track) {
-			player.playlist_sel = link;
-			break;
-		}
-	}
 
 	player.track = track;
 

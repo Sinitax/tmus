@@ -18,7 +18,7 @@ history_list_prev(struct inputln *cur, const char *search)
 	struct inputln *ln;
 
 	for (iter = cur->link.prev; iter && iter->prev; iter = iter->prev) {
-		ln = UPCAST(iter, struct inputln);
+		ln = UPCAST(iter, struct inputln, link);
 		if (!search || !*search || strcasestr(ln->buf, search))
 			return ln;
 	}
@@ -34,7 +34,7 @@ history_list_next(struct inputln *cur, const char *search)
 
 	iter = cur->link.next;
 	while (LIST_INNER(iter)) {
-		ln = UPCAST(iter, struct inputln);
+		ln = UPCAST(iter, struct inputln, link);
 		if (!search || !*search || strcasestr(ln->buf, search))
 			return ln;
 		iter = iter->next;
@@ -57,8 +57,8 @@ history_deinit(struct history *history)
 	struct link *link;
 	struct inputln *ln;
 
-	link = link_pop(LINK(history->input));
-	ln = UPCAST(link, struct inputln);
+	link = link_pop(&history->input->link);
+	ln = UPCAST(link, struct inputln, link);
 	inputln_free(ln);
 	history->input = NULL;
 
@@ -73,12 +73,12 @@ history_submit(struct history *history)
 {
 	/* if chose from history free input */
 	if (history->sel != history->input) {
-		link_pop(LINK(history->input));
+		link_pop(&history->input->link);
 		inputln_free(history->input);
 	}
 
 	/* pop first in case already in history */
-	link_pop(LINK(history->sel));
+	link_pop(&history->sel->link);
 	history_add(history, history->sel);
 
 	/* create new input buf and add to hist */
@@ -108,11 +108,11 @@ history_add(struct history *history, struct inputln *line)
 	if (list_len(&history->list) == HISTORY_MAX) {
 		/* pop last item to make space */
 		back = list_pop_back(&history->list);
-		ln = UPCAST(back, struct inputln);
+		ln = UPCAST(back, struct inputln, link);
 		inputln_free(ln);
 	}
 
-	list_push_front(&history->list, LINK(line));
+	list_push_front(&history->list, &line->link);
 }
 
 void

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "track.h"
 #include "list.h"
 #include "util.h"
 
@@ -29,21 +28,19 @@ enum {
 };
 
 struct player {
+	/* list of tracks to choose from on prev / next */
+	struct list playlist; /* struct track (link_pl) */
+
 	/* played track history */
-	struct list history;  /* struct ref -> struct track */
-	struct link *history_sel; /* position in history */
+	struct list history;  /* struct track (link_hs) */
 
 	/* queued tracks */
-	struct list queue; /* struct ref -> struct track */
+	struct list queue; /* struct track (link_pq) */
 
-	/* selected track, not (yet) part of history or queue */
+	/* last used track */
 	struct track *track;
 
-	/* list of tracks to choose from on prev / next */
-	struct list playlist; /* struct ref -> struct track */
-	struct link *playlist_sel; /* position in playlist */
-
-	/* a track is loaded, not necessarily player.track */
+	/* player has a track is loaded (not necessarily player.track) */
 	bool loaded;
 
 	/* automatically select new tracks when queue empty */

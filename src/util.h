@@ -11,8 +11,7 @@
 #define OOM_CHECK(x) assert((x) != NULL, __FILE__, __LINE__, "Out of Memory!")
 #define ERROR(...) error("" __VA_ARGS__)
 
-#define LINK(p) (&(p)->link)
-#define UPCAST(iter, type) LINK_UPCAST(iter, type, link)
+#define UPCAST(iter, type, link) LINK_UPCAST(iter, type, link)
 
 void panic(const char *file, int line, const char *msg, ...);
 void assert(int cond, const char *file, int line, const char *condstr);

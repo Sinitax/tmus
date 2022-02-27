@@ -27,21 +27,6 @@ refs_free(struct list *list)
 	list_free(list, ref_free, LINK_OFFSET(struct ref, link));
 }
 
-static struct link *
-refs_ffind(struct list *list, void *data)
-{
-	struct link *iter;
-	struct ref *ref;
-
-	for (LIST_ITER(list, iter)) {
-		ref = UPCAST(iter, struct ref);
-		if (ref->data == data)
-			return iter;
-	}
-
-	return NULL;
-}
-
 int
 refs_index(struct list *list, void *data)
 {
@@ -51,7 +36,7 @@ refs_index(struct list *list, void *data)
 
 	index = 0;
 	for (LIST_ITER(list, iter)) {
-		ref = UPCAST(iter, struct ref);
+		ref = UPCAST(iter, struct ref, link);
 		if (ref->data == data)
 			return index;
 		index++;
@@ -60,12 +45,28 @@ refs_index(struct list *list, void *data)
 	return -1;
 }
 
+struct link *
+refs_find(struct list *list, void *data)
+{
+	struct link *iter;
+	struct ref *ref;
+
+	for (LIST_ITER(list, iter)) {
+		ref = UPCAST(iter, struct ref, link);
+		if (ref->data == data)
+			return iter;
+	}
+
+	return NULL;
+}
+
 int
 refs_incl(struct list *list, void *data)
 {
 	struct link *ref;
 
-	ref = refs_ffind(list, data);
+	ref = refs_find(list, data);
+
 	return ref != NULL;
 }
 
@@ -75,10 +76,10 @@ refs_rm(struct list *list, void *data)
 	struct link *ref;
 	struct ref *dataref;
 
-	ref = refs_ffind(list, data);
+	ref = refs_find(list, data);
 	if (!ref) return;
 
-	dataref = UPCAST(ref, struct ref);
+	dataref = UPCAST(ref, struct ref, link);
 	link_pop(ref);
 	free(dataref);
 }

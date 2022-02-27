@@ -1,33 +1,57 @@
 #pragma once
 
-#include "tag.h"
-#include "track.h"
+#include "list.h"
 
-void data_load(void);
-void data_save(void);
-void data_free(void);
+#include <stdbool.h>
 
-int get_fid(const char *path);
-int track_fid_compare(struct link *a, struct link *b);
-void index_update(struct tag *tag);
-bool tracks_update(struct tag *tag);
-void playlist_update(void);
+struct tag {
+	char *name, *fpath;
+	struct list tracks;
 
-void tracks_load(struct tag *tag);
-void tracks_save(struct tag *tag);
+	struct link link;     /* tags list */
+	struct link link_sel; /* selected tags list */ 
+};
 
-bool track_rm(struct track *track);
+struct track {
+	char *name, *fpath;
+	struct tag *tag;
+
+	struct link link;    /* tracks list */
+	struct link link_pl; /* player playlist */
+	struct link link_tt; /* tag tracks list */
+	struct link link_pq; /* player queue */
+	struct link link_hs; /* player history */
+};
 
 bool make_dir(const char *path);
 bool rm_dir(const char *path, bool recursive);
 bool rm_file(const char *path);
 bool copy_file(const char *dst, const char *src);
+bool dup_file(const char *dst, const char *src);
 bool move_file(const char *dst, const char *src);
 
-struct tag *tag_find(const char *query);
+void index_update(struct tag *tag);
+bool tracks_update(struct tag *tag);
+
+struct track *tracks_vis_track(struct link *link);
+
+void playlist_clear(void);
+void playlist_update(bool exec);
+
+struct tag *tag_add(const char *fname);
+struct tag *tag_find(const char *name);
+bool tag_rm(struct tag *tag, bool sync_fs);
+
+struct track *track_add(struct tag *tag, const char *fname);
+bool track_rm(struct track *track, bool sync_fs);
+
+void data_load(void);
+void data_save(void);
+void data_free(void);
 
 extern const char *datadir;
 
 extern struct list tracks; /* struct ref */
 extern struct list tags; /* struct tag */
 extern struct list tags_sel; /* struct ref */
+

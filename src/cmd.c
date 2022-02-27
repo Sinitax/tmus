@@ -4,8 +4,6 @@
 #include "list.h"
 #include "player.h"
 #include "ref.h"
-#include "tag.h"
-#include "track.h"
 #include "tui.h"
 #include "util.h"
 
@@ -49,7 +47,7 @@ bool
 cmd_move(const char *name)
 {
 	struct link *link;
-	struct track *track;
+	struct track *track, *new;
 	struct tag *tag;
 	char *newpath;
 
@@ -58,49 +56,56 @@ cmd_move(const char *name)
 
 	link = list_at(tracks_vis, track_nav.sel);
 	if (!link) CMD_ERROR("No track selected");
-	track = UPCAST(link, struct ref)->data;
+	track = tracks_vis_track(link);
 
 	newpath = aprintf("%s/%s", tag->fpath, track->name);
 	OOM_CHECK(newpath);
+	if (!dup_file(track->fpath, newpath)) {
+		free(newpath);
+		CMD_ERROR("Failed to move track");
+	}
+	free(newpath);
 
-	if (!move_file(track->fpath, newpath))
-		CMD_ERROR("Failed to move file");
-	free(track->fpath);
-	track->fpath = newpath;
+	new = track_add(tag, track->name);
+	if (!new) {
+		rm_file(track->fpath);
+		ERROR("Failed to move track");
+	}
 
-	link_pop(link);
-	list_push_back(&tag->tracks, link);
+	if (!track_rm(track, true))
+		ERROR("Failed to move track");
 
-	playlist_update();
-
-	return 1;
+	return true;
 }
 
 bool
 cmd_copy(const char *name)
 {
 	struct link *link;
-	struct track *track;
-	struct ref *ref;
+	struct track *track, *new;
 	struct tag *tag;
 	char *newpath;
 
 	tag = tag_find(name);
 	if (!tag) return 0;
 
-	link = list_at(&player.playlist, track_nav.sel);
-	if (!link) return 0;
-	track = UPCAST(link, struct ref)->data;
+	link = list_at(tracks_vis, track_nav.sel);
+	if (!link) CMD_ERROR("No track selected");
+	track = tracks_vis_track(link);
 
 	newpath = aprintf("%s/%s", tag->fpath, track->name);
 	OOM_CHECK(newpath);
+	if (!dup_file(track->fpath, newpath)) {
+		free(newpath);
+		ERROR("Failed to copy track");
+	}
+	free(newpath);
 
-	copy_file(track->fpath, newpath);
-	track->fpath = newpath;
-
-	track = track_alloc(tag->fpath, track->name, get_fid(tag->fpath));
-	ref = ref_alloc(track);
-	list_push_back(&tag->tracks, &ref->link);
+	new = track_add(tag, track->name);
+	if (!new) {
+		rm_file(track->fpath);
+		CMD_ERROR("Failed to copy track");
+	}
 
 	return 1;
 }
@@ -110,6 +115,7 @@ cmd_reindex(const char *name)
 {
 	struct link *link;
 	struct tag *tag;
+	struct ref *ref;
 	struct list matches;
 
 	list_init(&matches);
@@ -117,18 +123,21 @@ cmd_reindex(const char *name)
 	if (!*name) {
 		link = list_at(&tags, tag_nav.sel);
 		if (!link) return false;
-		tag = UPCAST(link, struct tag);
-		list_push_back(&matches, LINK(ref_alloc(tag)));
+		tag = UPCAST(link, struct tag, link);
+		ref = ref_alloc(tag);
+		list_push_back(&matches, &ref->link);
 	} else if (!strcmp(name, "*")) {
 		for (LIST_ITER(&tags, link)) {
-			tag = UPCAST(link, struct tag);
-			list_push_back(&matches, LINK(ref_alloc(tag)));
+			tag = UPCAST(link, struct tag, link);
+			ref = ref_alloc(tag);
+			list_push_back(&matches, &ref->link);
 		}
 	} else {
 		for (LIST_ITER(&tags, link)) {
-			tag = UPCAST(link, struct tag);
+			tag = UPCAST(link, struct tag, link);
 			if (!strcmp(tag->name, name)) {
-				list_push_back(&matches, LINK(ref_alloc(tag)));
+				ref = ref_alloc(tag);
+				list_push_back(&matches, &ref->link);
 				break;
 			}
 		}
@@ -137,8 +146,8 @@ cmd_reindex(const char *name)
 	if (list_empty(&matches)) return false;
 
 	for (LIST_ITER(&matches, link)) {
-		tag = UPCAST(link, struct ref)->data;
-		if (!tracks_update(tag))
+		ref = UPCAST(link, struct ref, link);
+		if (!tracks_update(ref->data))
 			return false;
 	}
 
@@ -152,34 +161,26 @@ cmd_add_tag(const char *name)
 {
 	struct link *link;
 	struct tag *tag;
-	char *fname, *fpath;
+	char *fpath;
 
 	for (LIST_ITER(&tags, link)) {
-		tag = UPCAST(link, struct tag);
+		tag = UPCAST(link, struct tag, link);
 		if (!strcmp(tag->name, name))
 			CMD_ERROR("Tag already exists");
 	}
 
-	fname = aprintf("%s", name);
-	OOM_CHECK(fname);
-
-	fpath = aprintf("%s/%s", datadir, fname);
+	fpath = aprintf("%s/%s", datadir, name);
 	OOM_CHECK(fpath);
 
 	if (!make_dir(fpath)) {
-		CMD_SET_STATUS("Failed to create dir");
-		free(fname);
 		free(fpath);
-		return false;
+		CMD_ERROR("Failed to create dir");
 	}
 
-	tag = tag_alloc(datadir, fname);
-	OOM_CHECK(tag);
-
-	list_push_back(&tags, LINK(tag));
-
-	free(fname);
 	free(fpath);
+
+	tag = tag_add(name);
+	if (!tag) CMD_ERROR("Failed to add tag");
 
 	return true;
 }
@@ -189,15 +190,14 @@ cmd_rm_tag(const char *name)
 {
 	struct link *link;
 	struct tag *tag;
-	char *fname, *fpath;
 
 	if (!*name) {
 		link = list_at(&tags, tag_nav.sel);
 		if (!link) return false;
-		tag = UPCAST(link, struct tag);
+		tag = UPCAST(link, struct tag, link);
 	} else  {
 		for (LIST_ITER(&tags, link)) {
-			tag = UPCAST(link, struct tag);
+			tag = UPCAST(link, struct tag, link);
 			if (!strcmp(tag->name, name))
 				break;
 		}
@@ -206,13 +206,8 @@ cmd_rm_tag(const char *name)
 			CMD_ERROR("No such tag");
 	}
 
-	if (!rm_dir(tag->fpath, true)) {
-		tracks_update(tag); /* in case some deleted, some not */
-		CMD_ERROR("Failed to remove dir");
-	}
-
-	link_pop(LINK(tag));
-	tag_free(tag);
+	if (!tag_rm(tag, true))
+		CMD_ERROR("Failed to remove tag");
 
 	return true;
 }
@@ -235,7 +230,6 @@ cmd_run(const char *query, bool *found)
 {
 	const char *sep, *args;
 	int i, cmdlen;
-	bool success;
 
 	*found = false;
 	sep = strchr(query, ' ');
