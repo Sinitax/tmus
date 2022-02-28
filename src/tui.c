@@ -258,10 +258,10 @@ seek_next_selected_tag(void)
 	if (list_empty(&tags))
 		return;
 
-	link = list_at(&tags, track_nav.sel);
+	link = list_at(&tags, tag_nav.sel);
 	if (!link) return;
 
-	index = track_nav.sel;
+	index = tag_nav.sel;
 	tag = UPCAST(link, struct tag, link);
 	do {
 		index += 1;
@@ -273,7 +273,7 @@ seek_next_selected_tag(void)
 		tag = UPCAST(link, struct tag, link);
 	} while (!link_inuse(&tag->link_sel));
 
-	listnav_update_sel(&track_nav, index);
+	listnav_update_sel(&tag_nav, index);
 }
 
 void
@@ -282,7 +282,7 @@ delete_selected_tag(void)
 	struct link *link;
 	struct tag *tag;
 
-	link = list_at(&tags, track_nav.sel);
+	link = list_at(&tags, tag_nav.sel);
 	if (!link) return;
 	tag = UPCAST(link, struct tag, link);
 	tag_rm(tag, true);
@@ -294,40 +294,42 @@ tag_pane_input(wint_t c)
 	switch (c) {
 	case KEY_UP: /* nav up */
 		listnav_update_sel(&tag_nav, tag_nav.sel - 1);
-		return true;
+		break;
 	case KEY_DOWN: /* nav down */
 		listnav_update_sel(&tag_nav, tag_nav.sel + 1);
-		return true;
+		break;
 	case KEY_SPACE: /* toggle tag */
 		toggle_current_tag();
 		playlist_update(false);
-		return true;
+		break;
 	case KEY_ENTER: /* select only current tag */
 		select_only_current_tag();
 		playlist_update(false);
-		return true;
+		break;
 	case KEY_PPAGE: /* seek half a page up */
 		listnav_update_sel(&tag_nav, tag_nav.sel - tag_nav.wlen / 2);
-		return true;
+		break;
 	case KEY_NPAGE: /* seek half a page down */
 		listnav_update_sel(&tag_nav, tag_nav.sel + tag_nav.wlen / 2);
-		return true;
+		break;
 	case 'g': /* seek start of list */
 		listnav_update_sel(&tag_nav, 0);
-		return true;
+		break;
 	case 'G': /* seek end of list */
 		listnav_update_sel(&tag_nav, tag_nav.max - 1);
-		return true;
+		break;
 	case 'n': /* nav through selected tags */
 		seek_next_selected_tag();
-		return true;
+		break;
 	case 'D': /* delete tag */
 		delete_selected_tag();
 		playlist_update(false);
-		return true;
+		break;
+	default:
+		return false;
 	}
 
-	return false;
+	return true;
 }
 
 void
@@ -422,21 +424,21 @@ track_pane_input(wint_t c)
 	switch (c) {
 	case KEY_UP: /* nav up */
 		listnav_update_sel(&track_nav, track_nav.sel - 1);
-		return true;
+		break;
 	case KEY_DOWN: /* nav down */
 		listnav_update_sel(&track_nav, track_nav.sel + 1);
-		return true;
+		break;
 	case KEY_ENTER: /* play track */
 		play_selected_track();
-		return true;
+		break;
 	case KEY_PPAGE: /* seek half page up */
 		listnav_update_sel(&track_nav,
 			track_nav.sel - track_nav.wlen / 2);
-		return true;
+		break;
 	case KEY_NPAGE: /* seek half page down */
 		listnav_update_sel(&track_nav,
 			track_nav.sel + track_nav.wlen / 2);
-		return true;
+		break;
 	case 'g': /* seek start of list */
 		listnav_update_sel(&track_nav, 0);
 		break;
@@ -449,9 +451,11 @@ track_pane_input(wint_t c)
 	case 'D': /* delete track */
 		delete_selected_track();
 		break;
+	default:
+		return false;
 	}
 
-	return false;
+	return true;
 }
 
 void
