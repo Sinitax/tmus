@@ -452,7 +452,7 @@ track_add(struct tag *tag, const char *fname)
 	track->tag = tag;
 
 	/* insert track into sorted tracks list */
-	list_push_back(&tracks, &track->link);
+	list_insert_sorted(&tracks, &track->link, track_name_compare);
 
 	/* add to tag's tracks list */
 	list_push_back(&tag->tracks, &track->link_tt);

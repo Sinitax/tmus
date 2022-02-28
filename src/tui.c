@@ -10,6 +10,7 @@
 #include "player.h"
 #include "list.h"
 #include "listnav.h"
+#include "log.h"
 #include "style.h"
 #include "strbuf.h"
 #include "util.h"
@@ -40,6 +41,7 @@ typedef char *(*completion_gen)(const char *text, int fwd, int state);
 static void pane_title(struct pane *pane, const char *title, int highlight);
 
 static char *command_name_gen(const char *text, int fwd, int state);
+static char *tracks_vis_name_gen(const char *text, int fwd, int state);
 static char *track_name_gen(const char *text, int fwd, int state);
 static char *tag_name_gen(const char *text, int fwd, int state);
 
@@ -50,6 +52,10 @@ static void delete_selected_tag(void);
 
 static bool tag_pane_input(wint_t c);
 static void tag_pane_vis(struct pane *pane, int sel);
+
+static bool play_selected_track(void);
+static bool seek_playing_track_tag(void);
+static bool seek_playing_track(void);
 
 static void delete_selected_track(void);
 
@@ -160,28 +166,83 @@ command_name_gen(const char *text, int fwd, int reset)
 }
 
 char *
-track_name_gen(const char *text, int fwd, int reset)
+tracks_vis_name_gen(const char *text, int fwd, int reset)
 {
 	static struct link *cur;
 	struct link *link;
 	struct track *track;
+	const char *prevname;
 	char *dup;
 
 	if (reset) {
-		cur = tracks.head.next;
+		prevname = NULL;
+		cur = tracks_vis->head.next;
 		link = cur;
 	} else {
 		link = fwd ? cur->next : cur->prev;
+		prevname = NULL;
+		if (LIST_INNER(cur)) {
+			track = tracks_vis_track(cur);
+			prevname = track->name;
+		}
 	}
-
 	while (LIST_INNER(link)) {
-		track = UPCAST(link, struct track, link);
+		track = tracks_vis_track(link);
+		if (prevname && !strcmp(prevname, track->name))
+			goto next;
+
 		if (strcasestr(track->name, text)) {
 			cur = link;
 			dup = strdup(track->name);
 			OOM_CHECK(dup);
 			return dup;
 		}
+
+next:
+		prevname = track->name;
+		link = fwd ? link->next : link->prev;
+	}
+
+	return NULL;
+
+}
+
+char *
+track_name_gen(const char *text, int fwd, int reset)
+{
+	static struct link *cur;
+	struct link *link;
+	struct track *track;
+	const char *prevname;
+	char *dup;
+
+	if (reset) {
+		prevname = NULL;
+		cur = tracks.head.next;
+		link = cur;
+	} else {
+		link = fwd ? cur->next : cur->prev;
+		prevname = NULL;
+		if (LIST_INNER(cur)) {
+			track = UPCAST(cur, struct track, link);
+			prevname = track->name;
+		}
+	}
+
+	while (LIST_INNER(link)) {
+		track = UPCAST(link, struct track, link);
+		if (prevname && !strcmp(prevname, track->name))
+			goto next;
+
+		if (strcasestr(track->name, text)) {
+			cur = link;
+			dup = strdup(track->name);
+			OOM_CHECK(dup);
+			return dup;
+		}
+
+next:
+		prevname = track->name;
 		link = fwd ? link->next : link->prev;
 	}
 
@@ -376,38 +437,45 @@ tag_pane_vis(struct pane *pane, int sel)
 	}
 }
 
-void
+bool
 play_selected_track(void)
 {
 	struct link *link;
 	struct track *track;
 
 	link = list_at(tracks_vis, track_nav.sel);
-	if (!link) return;
+	if (!link) return false;
 	track = tracks_vis_track(link);
 	player_play_track(track);
+
+	return true;
 }
 
-void
+bool
 seek_playing_track_tag(void)
 {
 	int index;
 
 	if (!player.track)
-		return;
+		return false;
 
 	index = list_index(&tags, &player.track->tag->link);
-	if (index < 0) return;
+	if (index < 0) return false;
 
 	listnav_update_sel(&tag_nav, index);
+
+	return true;
 }
 
-void
+bool
 seek_playing_track(void)
 {
 	struct link *link;
 	struct track *track;
 	int index;
+
+	if (!player.track)
+		return false;
 
 	index = 0;
 	for (LIST_ITER(tracks_vis, link)) {
@@ -418,6 +486,8 @@ seek_playing_track(void)
 		}
 		index += 1;
 	}
+
+	return true;
 }
 
 void
@@ -482,7 +552,6 @@ track_pane_vis(struct pane *pane, int sel)
 	werase(pane->win);
 	pane_title(pane, "Tracks", sel);
 
-	listnav_update_bounds(&track_nav, 0, list_len(tracks_vis));
 	listnav_update_wlen(&track_nav, pane->h - 1);
 
 	index = -1;
@@ -534,20 +603,13 @@ play_track(const char *query)
 {
 	struct track *track;
 	struct link *link;
-	const char *prevname;
 
-	prevname = NULL;
 	for (LIST_ITER(&tracks, link)) {
 		track = UPCAST(link, struct track, link);
-		if (prevname && !strcmp(track->name, prevname))
-			continue;
-
 		if (!strcmp(track->name, query)) {
 			player_play_track(track);
 			return true;
 		}
-
-		prevname = track->name;
 	}
 
 	return false;
@@ -809,6 +871,8 @@ update_tracks_vis(void)
 		tag = UPCAST(link, struct tag, link);
 		tracks_vis = &tag->tracks;
 	}
+
+	listnav_update_bounds(&track_nav, 0, list_len(tracks_vis));
 }
 
 void
@@ -894,7 +958,7 @@ main_input(wint_t c)
 		pane_sel = cmd_pane;
 		completion_reset = 1;
 		history = &track_select_history;
-		completion = track_name_gen;
+		completion = tracks_vis_name_gen;
 		break;
 	case L'!':
 		cmd_input_mode = IMODE_TRACK_PLAY;
@@ -922,7 +986,8 @@ main_input(wint_t c)
 		quit = 1;
 		break;
 	case L'N':
-		seek_playing_track_tag();
+		if (!seek_playing_track_tag())
+			return;
 		update_tracks_vis();
 		seek_playing_track();
 		pane_sel = track_pane;
