@@ -40,6 +40,9 @@ struct player {
 	/* last used track */
 	struct track *track;
 
+	/* player track name (not necessarily from player.track) */
+	char *track_name;
+
 	/* player has a track is loaded (not necessarily player.track) */
 	bool loaded;
 

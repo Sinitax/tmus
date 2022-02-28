@@ -56,7 +56,6 @@ static void tag_pane_vis(struct pane *pane, int sel);
 static bool play_selected_track(void);
 static bool seek_playing_track_tag(void);
 static bool seek_playing_track(void);
-
 static void delete_selected_track(void);
 
 static bool track_pane_input(wint_t c);
@@ -763,9 +762,14 @@ cmd_pane_vis(struct pane *pane, int sel)
 	/* track name */
 	style_on(pane->win, STYLE_TITLE);
 	pane_clearln(pane, 0);
-	if (player.loaded && player.track) {
+	if (player.loaded) {
 		strbuf_clear(&line);
-		strbuf_append(&line, " %s", player.track->name);
+		if (player.track)
+			strbuf_append(&line, " %s", player.track->name);
+		else if (player.track_name)
+			strbuf_append(&line, " %s", player.track_name);
+		else
+			strbuf_append(&line, "<UNKNOWN>");
 		pane_writeln(pane, 0, line.buf);
 	}
 	style_off(pane->win, STYLE_TITLE);

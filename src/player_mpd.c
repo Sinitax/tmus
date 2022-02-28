@@ -230,6 +230,7 @@ player_init(void)
 	list_init(&player.queue);
 
 	player.track = NULL;
+	player.track_name = NULL;
 
 	player.loaded = 0;
 	player.autoplay = true;
@@ -251,7 +252,9 @@ player_deinit(void)
 	list_clear(&player.playlist);
 	list_clear(&player.queue);
 	list_clear(&player.history);
-	if (player.status) free(player.status);
+
+	free(player.status);
+	free(player.track_name);
 
 	if (mpd.conn) mpd_connection_free(mpd.conn);
 }
@@ -315,11 +318,15 @@ player_update(void)
 
 	current_song = mpd_run_current_song(mpd.conn);
 	if (current_song) {
+		player.track_name = strdup(mpd_song_get_uri(current_song));
+		OOM_CHECK(player.track_name);
 		player.loaded = true;
 		player.time_pos = mpd_status_get_elapsed_time(status);
 		player.time_end = mpd_song_get_duration(current_song);
 		mpd_song_free(current_song);
 	} else {
+		free(player.track_name);
+		player.track_name = NULL;
 		player.loaded = false;
 		player.time_pos = 0;
 		player.time_end = 0;
