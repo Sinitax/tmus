@@ -72,6 +72,9 @@ cmd_move(const char *name)
 		ERROR("Failed to move track");
 	}
 
+	if (player.track == track)
+		player.track = new;
+
 	if (!track_rm(track, true))
 		ERROR("Failed to move track");
 
@@ -113,11 +116,18 @@ cmd_copy(const char *name)
 bool
 cmd_reindex(const char *name)
 {
+	struct track *track;
 	struct link *link;
 	struct tag *tag;
 	struct ref *ref;
 	struct list matches;
+	struct tag *playing_tag;
+	char *playing_name;
+	bool status;
 
+	status = false;
+	playing_tag = NULL;
+	playing_name = NULL;
 	list_init(&matches);
 
 	if (!*name) {
@@ -143,17 +153,41 @@ cmd_reindex(const char *name)
 		}
 	}
 
-	if (list_empty(&matches)) return false;
+	if (list_empty(&matches))
+		return false;
 
+	/* save old playing track */
+	if (player.track) {
+		playing_tag = player.track->tag;
+		playing_name = strdup(player.track->name);
+		OOM_CHECK(playing_name);
+	}
+
+	/* update each tag specified */
 	for (LIST_ITER(&matches, link)) {
 		ref = UPCAST(link, struct ref, link);
 		if (!tracks_update(ref->data))
-			return false;
+			goto cleanup;
 	}
 
-	refs_free(&matches);
+	/* try to find old playing track among reindexed tracks */
+	if (playing_tag) {
+		for (LIST_ITER(&playing_tag->tracks, link)) {
+			track = UPCAST(link, struct track, link_tt);
+			if (!strcmp(track->name, playing_name)) {
+				player.track = track;
+				break;
+			}
+		}
+	}
 
-	return true;
+	status = true;
+
+cleanup:
+	refs_free(&matches);
+	free(playing_name);
+
+	return status;
 }
 
 bool

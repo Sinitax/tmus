@@ -312,16 +312,16 @@ tag_pane_input(wint_t c)
 	case KEY_NPAGE: /* seek half a page down */
 		listnav_update_sel(&tag_nav, tag_nav.sel + tag_nav.wlen / 2);
 		break;
-	case 'g': /* seek start of list */
+	case L'g': /* seek start of list */
 		listnav_update_sel(&tag_nav, 0);
 		break;
-	case 'G': /* seek end of list */
+	case L'G': /* seek end of list */
 		listnav_update_sel(&tag_nav, tag_nav.max - 1);
 		break;
-	case 'n': /* nav through selected tags */
+	case L'n': /* nav through selected tags */
 		seek_next_selected_tag();
 		break;
-	case 'D': /* delete tag */
+	case L'D': /* delete tag */
 		delete_selected_tag();
 		playlist_update(false);
 		break;
@@ -389,6 +389,20 @@ play_selected_track(void)
 }
 
 void
+seek_playing_track_tag(void)
+{
+	int index;
+
+	if (!player.track)
+		return;
+
+	index = list_index(&tags, &player.track->tag->link);
+	if (index < 0) return;
+
+	listnav_update_sel(&tag_nav, index);
+}
+
+void
 seek_playing_track(void)
 {
 	struct link *link;
@@ -439,16 +453,16 @@ track_pane_input(wint_t c)
 		listnav_update_sel(&track_nav,
 			track_nav.sel + track_nav.wlen / 2);
 		break;
-	case 'g': /* seek start of list */
+	case L'g': /* seek start of list */
 		listnav_update_sel(&track_nav, 0);
 		break;
-	case 'G': /* seek end of list */
+	case L'G': /* seek end of list */
 		listnav_update_sel(&track_nav, track_nav.max - 1);
 		break;
-	case 'n': /* seek playing */
+	case L'n': /* seek playing */
 		seek_playing_track();
 		break;
-	case 'D': /* delete track */
+	case L'D': /* delete track */
 		delete_selected_track();
 		break;
 	default:
@@ -877,7 +891,7 @@ main_input(wint_t c)
 	case L'/':
 		cmd_input_mode = IMODE_TRACK_SELECT;
 		pane_after_cmd = pane_sel;
-		pane_sel = &pane_bot;
+		pane_sel = cmd_pane;
 		completion_reset = 1;
 		history = &track_select_history;
 		completion = track_name_gen;
@@ -885,7 +899,7 @@ main_input(wint_t c)
 	case L'!':
 		cmd_input_mode = IMODE_TRACK_PLAY;
 		pane_after_cmd = pane_sel;
-		pane_sel = &pane_bot;
+		pane_sel = cmd_pane;
 		completion_reset = 1;
 		history = &track_play_history;
 		completion = track_name_gen;
@@ -893,7 +907,7 @@ main_input(wint_t c)
 	case L'?':
 		cmd_input_mode = IMODE_TAG_SELECT;
 		pane_after_cmd = pane_sel;
-		pane_sel = &pane_bot;
+		pane_sel = cmd_pane;
 		completion_reset = 1;
 		history = &tag_select_history;
 		completion = tag_name_gen;
@@ -906,6 +920,12 @@ main_input(wint_t c)
 		break;
 	case L'q':
 		quit = 1;
+		break;
+	case L'N':
+		seek_playing_track_tag();
+		update_tracks_vis();
+		seek_playing_track();
+		pane_sel = track_pane;
 		break;
 	}
 }
