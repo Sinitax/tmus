@@ -490,6 +490,9 @@ track_rm(struct track *track, bool sync_fs)
 	/* remove from player queue */
 	link_pop(&track->link_pq);
 
+	/* remove from player history */
+	link_pop(&track->link_hs);
+
 	/* remove the reference as last used track */
 	if (player.track == track)
 		player.track = NULL;
@@ -517,8 +520,8 @@ aquire_lock(const char *datadir)
 			return false;
 		}
 
-		fread(linebuf, 1, sizeof(linebuf), file);
-		pid = atoi(linebuf);
+		fgets(linebuf, sizeof(linebuf), file);
+		pid = strtol(linebuf, NULL, 10);
 		procpath = aprintf("/proc/%i", pid);
 		OOM_CHECK(procpath);
 		if (path_exists(procpath)) {

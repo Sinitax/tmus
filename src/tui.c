@@ -504,7 +504,8 @@ delete_selected_track(void)
 	link = list_at(tracks_vis, track_nav.sel);
 	ASSERT(link != NULL);
 	track = tracks_vis_track(link);
-	track_rm(track, true);
+	if (!track_rm(track, true))
+		CMD_SET_STATUS("Failed to remove track");
 }
 
 bool

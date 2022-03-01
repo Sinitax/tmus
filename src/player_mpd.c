@@ -363,6 +363,7 @@ player_update(void)
 
 	current_song = mpd_run_current_song(mpd.conn);
 	if (current_song) {
+		free(player.track_name);
 		player.track_name = mpd_loaded_track_name(current_song);
 		OOM_CHECK(player.track_name);
 		player.loaded = true;
