@@ -31,6 +31,7 @@
 enum {
 	IMODE_EXECUTE,
 	IMODE_TRACK_PLAY,
+	IMODE_TRACK_VIS_SELECT,
 	IMODE_TRACK_SELECT,
 	IMODE_TAG_SELECT,
 	IMODE_COUNT
@@ -41,7 +42,7 @@ typedef char *(*completion_gen)(const char *text, int fwd, int state);
 static void pane_title(struct pane *pane, const char *title, int highlight);
 
 static char *command_name_gen(const char *text, int fwd, int state);
-static char *tracks_vis_name_gen(const char *text, int fwd, int state);
+static char *track_vis_name_gen(const char *text, int fwd, int state);
 static char *track_name_gen(const char *text, int fwd, int state);
 static char *tag_name_gen(const char *text, int fwd, int state);
 
@@ -63,8 +64,9 @@ static void track_pane_vis(struct pane *pane, int sel);
 
 static bool run_cmd(const char *name);
 static bool play_track(const char *name);
-static bool select_track(const char *name);
-static bool select_tag(const char *name);
+static bool seek_track(const char *name);
+static bool seek_track_vis(const char *name);
+static bool seek_tag(const char *name);
 
 static bool cmd_pane_input(wint_t c);
 static void cmd_pane_vis(struct pane *pane, int sel);
@@ -90,6 +92,7 @@ static struct pane *const panes[] = {
 static struct history command_history;
 static struct history track_play_history;
 static struct history track_select_history;
+static struct history track_vis_select_history;
 static struct history tag_select_history;
 static struct history *history;
 
@@ -115,6 +118,7 @@ const char imode_prefix[IMODE_COUNT] = {
 	[IMODE_EXECUTE] = ':',
 	[IMODE_TRACK_PLAY] = '!',
 	[IMODE_TRACK_SELECT] = '/',
+	[IMODE_TRACK_VIS_SELECT] = '~',
 	[IMODE_TAG_SELECT] = '?',
 };
 
@@ -167,7 +171,7 @@ command_name_gen(const char *text, int fwd, int reset)
 }
 
 char *
-tracks_vis_name_gen(const char *text, int fwd, int reset)
+track_vis_name_gen(const char *text, int fwd, int reset)
 {
 	static struct link *cur;
 	struct link *link;
@@ -617,7 +621,29 @@ play_track(const char *query)
 }
 
 bool
-select_track(const char *query)
+seek_track(const char *query)
+{
+	struct track *track;
+	struct link *link;
+	int index;
+
+	index = 0;
+	for (LIST_ITER(&tracks, link)) {
+		track = UPCAST(link, struct track, link);
+		if (!strcmp(track->name, query)) {
+			listnav_update_sel(&track_nav, index);
+			pane_after_cmd = track_pane;
+			playlist_update(false);
+			return true;
+		}
+		index += 1;
+	}
+
+	return false;
+}
+
+bool
+seek_track_vis(const char *query)
 {
 	struct track *track;
 	struct link *link;
@@ -639,7 +665,7 @@ select_track(const char *query)
 }
 
 bool
-select_tag(const char *query)
+seek_tag(const char *query)
 {
 	struct tag *tag;
 	struct link *link;
@@ -705,10 +731,13 @@ cmd_pane_input(wint_t c)
 			if (!play_track(history->sel->buf))
 				CMD_SET_STATUS("Failed to find track");
 		} else if (cmd_input_mode == IMODE_TRACK_SELECT) {
-			if (!select_track(history->sel->buf))
+			if (!seek_track(history->sel->buf))
 				CMD_SET_STATUS("Failed to find track");
+		} else if (cmd_input_mode == IMODE_TRACK_VIS_SELECT) {
+			if (!seek_track_vis(history->sel->buf))
+				CMD_SET_STATUS("Failed to find track in view");
 		} else if (cmd_input_mode == IMODE_TAG_SELECT) {
-			if (!select_tag(history->sel->buf))
+			if (!seek_tag(history->sel->buf))
 				CMD_SET_STATUS("Failed to find tag");
 		}
 
@@ -977,7 +1006,15 @@ main_input(wint_t c)
 		pane_sel = cmd_pane;
 		completion_reset = 1;
 		history = &track_select_history;
-		completion = tracks_vis_name_gen;
+		completion = track_name_gen;
+		break;
+	case L'~':
+		cmd_input_mode = IMODE_TRACK_VIS_SELECT;
+		pane_after_cmd = pane_sel;
+		pane_sel = cmd_pane;
+		completion_reset = 1;
+		history = &track_vis_select_history;
+		completion = track_vis_name_gen;
 		break;
 	case L'!':
 		cmd_input_mode = IMODE_TRACK_PLAY;
@@ -1104,6 +1141,7 @@ tui_init(void)
 
 	history_init(&track_play_history);
 	history_init(&track_select_history);
+	history_init(&track_vis_select_history);
 	history_init(&tag_select_history);
 	history_init(&command_history);
 	history = &command_history;
@@ -1141,6 +1179,7 @@ tui_deinit(void)
 
 	history_deinit(&track_play_history);
 	history_deinit(&track_select_history);
+	history_deinit(&track_vis_select_history);
 	history_deinit(&tag_select_history);
 	history_deinit(&command_history);
 
