@@ -767,9 +767,9 @@ cmd_pane_vis(struct pane *pane, int sel)
 		if (player.track)
 			strbuf_append(&line, " %s", player.track->name);
 		else if (player.track_name)
-			strbuf_append(&line, " %s", player.track_name);
+			strbuf_append(&line, " (*) %s", player.track_name);
 		else
-			strbuf_append(&line, "<UNKNOWN>");
+			strbuf_append(&line, " <UNKNOWN>");
 		pane_writeln(pane, 0, line.buf);
 	}
 	style_off(pane->win, STYLE_TITLE);

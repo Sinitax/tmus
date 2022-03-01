@@ -259,7 +259,9 @@ cleanup:
 bool
 dup_file(const char *src, const char *dst)
 {
-	/* TODO add option for hard link dup if possible */
+	if (link(src, dst) == 0)
+		return true;
+
 	return copy_file(src, dst);
 }
 

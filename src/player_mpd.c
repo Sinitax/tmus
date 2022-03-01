@@ -80,6 +80,19 @@ mpd_handle_status(int status)
 	return 0;
 }
 
+char *
+mpd_loaded_track_name(struct mpd_song *song)
+{
+	const char *path, *sep;
+
+	path = mpd_song_get_uri(song);
+
+	sep = strrchr(path, '/');
+	if (!sep) return strdup(path);
+
+	return strdup(sep + 1);
+}
+
 bool
 history_contains(struct track *cmp, int depth)
 {
@@ -125,9 +138,39 @@ playlist_track_lru(int skip)
 }
 
 struct track *
+playlist_track_next_unused(int skip)
+{
+	struct track *track;
+	struct link *link, *start;
+	int len;
+
+	track = NULL;
+
+	if (!list_len(&player.playlist))
+		return NULL;
+
+	len = list_len(&player.playlist);
+	start = link = list_at(&player.playlist, skip);
+	while (LIST_INNER(link)) {
+		track = UPCAST(link, struct track, link_pl);
+
+		if (!history_contains(track, len))
+			break;
+
+		link = link->next;
+		if (!LIST_INNER(link))
+			link = list_front(&player.playlist);
+
+		if (link == start)
+			return NULL;
+	}
+
+	return track;
+}
+
+struct track *
 player_next_from_playlist(void)
 {
-	struct link *link;
 	int index;
 
 	if (list_empty(&player.playlist))
@@ -141,12 +184,14 @@ player_next_from_playlist(void)
 		return playlist_track_lru(index);
 	} else {
 		if (player.track && link_inuse(&player.track->link_pl)) {
-			link = player.track->link_pl.next;
-			if (!link) list_front(&player.playlist);
+			index = list_index(&player.playlist, &player.track->link_pl);
+			if (index < 0) PANIC();
+			if (index == list_len(&player.playlist))
+				index = 0;
 		} else {
-			link = list_front(&player.playlist);
+			index = 0;
 		}
-		return UPCAST(link, struct track, link_pl);
+		return playlist_track_next_unused(index);
 	}
 
 	return NULL;
@@ -318,7 +363,7 @@ player_update(void)
 
 	current_song = mpd_run_current_song(mpd.conn);
 	if (current_song) {
-		player.track_name = strdup(mpd_song_get_uri(current_song));
+		player.track_name = mpd_loaded_track_name(current_song);
 		OOM_CHECK(player.track_name);
 		player.loaded = true;
 		player.time_pos = mpd_status_get_elapsed_time(status);
