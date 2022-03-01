@@ -8,6 +8,7 @@
 
 #define CMD_SET_STATUS(...) do { \
 		free(cmd_status); \
+		cmd_status_uptime = 10; \
 		cmd_status = aprintf(__VA_ARGS__); \
 	} while (0)
 
@@ -27,4 +28,5 @@ extern struct listnav tag_nav;
 extern struct listnav track_nav;
 
 extern char *cmd_status;
+extern int cmd_status_uptime;
 

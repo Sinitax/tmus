@@ -107,7 +107,9 @@ struct list *tracks_vis;
 int track_show_playlist;
 struct listnav tag_nav;
 struct listnav track_nav;
+
 char *cmd_status;
+int cmd_status_uptime;
 
 const char imode_prefix[IMODE_COUNT] = {
 	[IMODE_EXECUTE] = ':',
@@ -802,12 +804,21 @@ cmd_pane_vis(struct pane *pane, int sel)
 	}
 
 	/* status bits on right of status line */
-	if (player.loaded) ATTR_ON(pane->win, A_REVERSE);
-	mvwaddstr(pane->win, 1, pane->w - 5, "[   ]");
-	if (track_show_playlist) mvwaddstr(pane->win, 1, pane->w - 4, "P");
-	if (player.autoplay) mvwaddstr(pane->win, 1, pane->w - 3, "A");
-	if (player.shuffle) mvwaddstr(pane->win, 1, pane->w - 2, "S");
-	if (player.loaded) ATTR_OFF(pane->win, A_REVERSE);
+	if (player.loaded)
+		ATTR_ON(pane->win, A_REVERSE);
+
+	mvwaddstr(pane->win, 1, pane->w - 6, "[    ]");
+	if (list_empty(&player.history))
+		mvwaddstr(pane->win, 1, pane->w - 5, "H");
+	if (track_show_playlist)
+		mvwaddstr(pane->win, 1, pane->w - 4, "P");
+	if (player.autoplay)
+		mvwaddstr(pane->win, 1, pane->w - 3, "A");
+	if (player.shuffle)
+		mvwaddstr(pane->win, 1, pane->w - 2, "S");
+
+	if (player.loaded)
+		ATTR_OFF(pane->win, A_REVERSE);
 
 	if (sel || cmd_show) {
 		/* cmd and search input */
@@ -841,10 +852,14 @@ cmd_pane_vis(struct pane *pane, int sel)
 				? cmd->buf[cmd->cur] : L' ');
 			ATTR_OFF(pane->win, A_REVERSE);
 		}
-	} else if (cmd_status) {
+	} else if (cmd_status && cmd_status_uptime) {
+		cmd_status_uptime--;
 		strbuf_clear(&line);
 		strbuf_append(&line, " %s", cmd_status);
 		pane_writeln(pane, 2, line.buf);
+	} else {
+		free(cmd_status);
+		cmd_status = NULL;
 	}
 }
 
@@ -1082,6 +1097,7 @@ tui_init(void)
 	cmd_input_mode = IMODE_TRACK_SELECT;
 
 	cmd_status = NULL;
+	cmd_status_uptime = 0;
 
 	inputln_init(&completion_query);
 	completion_reset = 1;
