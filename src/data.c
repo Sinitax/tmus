@@ -172,6 +172,12 @@ tracks_save(struct tag *tag)
 }
 
 bool
+path_exists(const char *path)
+{
+	return access(path, F_OK) == 0;
+}
+
+bool
 make_dir(const char *path)
 {
 	return mkdir(path, S_IRWXU | S_IRWXG) == 0;
@@ -493,6 +499,65 @@ track_rm(struct track *track, bool sync_fs)
 	return true;
 }
 
+bool
+aquire_lock(const char *datadir)
+{
+	char *lockpath, *procpath;
+	char linebuf[512];
+	FILE *file;
+	int pid;
+
+	lockpath = aprintf("%s/.lock", datadir);
+	OOM_CHECK(lockpath);
+
+	if (path_exists(lockpath)) {
+		file = fopen(lockpath, "r");
+		if (file == NULL) {
+			free(lockpath);
+			return false;
+		}
+
+		fread(linebuf, 1, sizeof(linebuf), file);
+		pid = atoi(linebuf);
+		procpath = aprintf("/proc/%i", pid);
+		OOM_CHECK(procpath);
+		if (path_exists(procpath)) {
+			free(procpath);
+			free(lockpath);
+			return false;
+		}
+		free(procpath);
+
+		fclose(file);
+	}
+
+	file = fopen(lockpath, "w+");
+	if (file == NULL) return false;
+	snprintf(linebuf, sizeof(linebuf), "%i", getpid());
+	fputs(linebuf, file);
+	fclose(file);
+
+	free(lockpath);
+
+	return true;
+}
+
+bool
+release_lock(const char *datadir)
+{
+	char *lockpath;
+	bool status;
+
+	lockpath = aprintf("%s/.lock", datadir);
+	OOM_CHECK(lockpath);
+
+	status = rm_file(lockpath);
+
+	free(lockpath);
+
+	return status;
+}
+
 void
 data_load(void)
 {
@@ -508,6 +573,9 @@ data_load(void)
 
 	datadir = getenv("TMUS_DATA");
 	if (!datadir) ERROR("TMUS_DATA not set!\n");
+
+	if (!aquire_lock(datadir))
+		ERROR("Failed to acquire lock\n");
 
 	dir = opendir(datadir);
 	if (!dir) ERROR("Failed to access dir: %s\n", datadir);
@@ -542,6 +610,8 @@ data_save(void)
 		tag = UPCAST(link, struct tag, link);
 		tracks_save(tag);
 	}
+
+	release_lock(datadir);
 }
 
 void

@@ -23,6 +23,7 @@ struct track {
 	struct link link_hs; /* player history */
 };
 
+bool path_exists(const char *path);
 bool make_dir(const char *path);
 bool rm_dir(const char *path, bool recursive);
 bool rm_file(const char *path);
@@ -44,6 +45,9 @@ bool tag_rm(struct tag *tag, bool sync_fs);
 
 struct track *track_add(struct tag *tag, const char *fname);
 bool track_rm(struct track *track, bool sync_fs);
+
+bool acquire_lock(const char *path);
+bool release_lock(const char *path);
 
 void data_load(void);
 void data_save(void);
