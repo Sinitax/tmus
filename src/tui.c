@@ -55,8 +55,8 @@ static bool tag_pane_input(wint_t c);
 static void tag_pane_vis(struct pane *pane, int sel);
 
 static bool play_selected_track(void);
-static bool seek_playing_track_tag(void);
-static bool seek_playing_track(void);
+static bool seek_track_tag(struct track *target);
+static bool seek_track(struct track *target);
 static void delete_selected_track(void);
 
 static bool track_pane_input(wint_t c);
@@ -64,8 +64,8 @@ static void track_pane_vis(struct pane *pane, int sel);
 
 static bool run_cmd(const char *name);
 static bool play_track(const char *name);
-static bool seek_track(const char *name);
-static bool seek_track_vis(const char *name);
+static bool seek_track_by_name(const char *name);
+static bool seek_track_vis_by_name(const char *name);
 static bool seek_tag(const char *name);
 
 static bool cmd_pane_input(wint_t c);
@@ -457,35 +457,34 @@ play_selected_track(void)
 }
 
 bool
-seek_playing_track_tag(void)
+seek_track_tag(struct track *target)
 {
 	int index;
 
-	if (!player.track)
-		return false;
+	if (!target) return false;
 
-	index = list_index(&tags, &player.track->tag->link);
+	index = list_index(&tags, &target->tag->link);
 	if (index < 0) return false;
 
 	listnav_update_sel(&tag_nav, index);
+	update_tracks_vis();
 
 	return true;
 }
 
 bool
-seek_playing_track(void)
+seek_track(struct track *target)
 {
 	struct link *link;
 	struct track *track;
 	int index;
 
-	if (!player.track)
-		return false;
+	if (!target) return false;
 
 	index = 0;
 	for (LIST_ITER(tracks_vis, link)) {
 		track = tracks_vis_track(link);
-		if (track == player.track) {
+		if (track == target) {
 			listnav_update_sel(&track_nav, index);
 			break;
 		}
@@ -536,7 +535,7 @@ track_pane_input(wint_t c)
 		listnav_update_sel(&track_nav, track_nav.max - 1);
 		break;
 	case L'n': /* seek playing */
-		seek_playing_track();
+		seek_track(player.track);
 		break;
 	case L'D': /* delete track */
 		delete_selected_track();
@@ -622,44 +621,37 @@ play_track(const char *query)
 }
 
 bool
-seek_track(const char *query)
+seek_track_by_name(const char *query)
 {
 	struct track *track;
 	struct link *link;
-	int index;
 
-	index = 0;
 	for (LIST_ITER(&tracks, link)) {
 		track = UPCAST(link, struct track, link);
 		if (!strcmp(track->name, query)) {
-			listnav_update_sel(&track_nav, index);
+			seek_track_tag(track);
+			seek_track(track);
 			pane_after_cmd = track_pane;
-			playlist_update(false);
 			return true;
 		}
-		index += 1;
 	}
 
 	return false;
 }
 
 bool
-seek_track_vis(const char *query)
+seek_track_vis_by_name(const char *query)
 {
 	struct track *track;
 	struct link *link;
-	int index;
 
-	index = 0;
 	for (LIST_ITER(tracks_vis, link)) {
 		track = tracks_vis_track(link);
 		if (!strcmp(track->name, query)) {
-			listnav_update_sel(&track_nav, index);
+			seek_track(track);
 			pane_after_cmd = track_pane;
-			playlist_update(false);
 			return true;
 		}
-		index += 1;
 	}
 
 	return false;
@@ -732,10 +724,10 @@ cmd_pane_input(wint_t c)
 			if (!play_track(history->sel->buf))
 				CMD_SET_STATUS("Failed to find track");
 		} else if (cmd_input_mode == IMODE_TRACK_SELECT) {
-			if (!seek_track(history->sel->buf))
+			if (!seek_track_by_name(history->sel->buf))
 				CMD_SET_STATUS("Failed to find track");
 		} else if (cmd_input_mode == IMODE_TRACK_VIS_SELECT) {
-			if (!seek_track_vis(history->sel->buf))
+			if (!seek_track_vis_by_name(history->sel->buf))
 				CMD_SET_STATUS("Failed to find track in view");
 		} else if (cmd_input_mode == IMODE_TAG_SELECT) {
 			if (!seek_tag(history->sel->buf))
@@ -1043,10 +1035,9 @@ main_input(wint_t c)
 		quit = 1;
 		break;
 	case L'N':
-		if (!seek_playing_track_tag())
+		if (!seek_track_tag(player.track))
 			return;
-		update_tracks_vis();
-		seek_playing_track();
+		seek_track(player.track);
 		pane_sel = track_pane;
 		break;
 	}
