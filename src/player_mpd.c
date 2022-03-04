@@ -138,7 +138,7 @@ playlist_track_lru(int skip)
 }
 
 struct track *
-playlist_track_next_unused(int skip)
+playlist_track_next_unused(int index)
 {
 	struct track *track;
 	struct link *link, *start;
@@ -150,11 +150,11 @@ playlist_track_next_unused(int skip)
 		return NULL;
 
 	len = list_len(&player.playlist);
-	start = link = list_at(&player.playlist, skip);
+	start = link = list_at(&player.playlist, index);
 	while (LIST_INNER(link)) {
 		track = UPCAST(link, struct track, link_pl);
 
-		if (!history_contains(track, len))
+		if (!history_contains(track, len - 1))
 			break;
 
 		link = link->next;

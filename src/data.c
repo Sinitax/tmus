@@ -184,6 +184,12 @@ make_dir(const char *path)
 }
 
 bool
+move_dir(const char *src, const char *dst)
+{
+	return rename(src, dst) == 0;
+}
+
+bool
 rm_dir(const char *path, bool recursive)
 {
 	char *files[] = { (char *) path, NULL };
@@ -449,6 +455,34 @@ tag_rm(struct tag *tag, bool sync_fs)
 	return true;
 }
 
+bool
+tag_rename(struct tag *tag, const char *name)
+{
+	struct link *link;
+	struct track *track;
+	char *newpath;
+
+	newpath = aprintf("%s/%s", datadir, name);
+	OOM_CHECK(newpath);
+
+	if (!move_dir(tag->fpath, newpath)) {
+		free(newpath);
+		return false;
+	}
+
+	free(tag->fpath);
+	tag->fpath = newpath;
+
+	for (LIST_ITER(&tag->tracks, link)) {
+		track = UPCAST(link, struct track, link_tt);
+		free(track->fpath);
+		track->fpath = aprintf("%s/%s", newpath, track->name);
+		OOM_CHECK(track->fpath);
+	}
+
+	return true;
+}
+
 struct track *
 track_add(struct tag *tag, const char *fname)
 {
@@ -498,6 +532,34 @@ track_rm(struct track *track, bool sync_fs)
 		player.track = NULL;
 
 	track_free(track);
+
+	return true;
+}
+
+bool
+track_rename(struct track *track, const char *name)
+{
+	char *newpath;
+
+	newpath = aprintf("%s/%s", track->tag->fpath, name);
+	OOM_CHECK(newpath);
+
+	if (path_exists(newpath)) {
+		free(newpath);
+		return false;
+	}
+
+	if (!move_file(track->fpath, newpath)) {
+		free(newpath);
+		return false;
+	}
+
+	free(track->fpath);
+	track->fpath = newpath;
+
+	free(track->name);
+	track->name = strdup(name);
+	OOM_CHECK(track->name);
 
 	return true;
 }

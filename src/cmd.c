@@ -24,6 +24,7 @@ static bool cmd_copy(const char *args);
 static bool cmd_reindex(const char *args);
 static bool cmd_add_tag(const char *args);
 static bool cmd_rm_tag(const char *args);
+static bool cmd_rename(const char *args);
 
 const struct cmd commands[] = {
 	{ "save", cmd_save },
@@ -32,6 +33,7 @@ const struct cmd commands[] = {
 	{ "reindex", cmd_reindex },
 	{ "addtag", cmd_add_tag },
 	{ "rmtag", cmd_rm_tag },
+	{ "rename", cmd_rename },
 };
 
 const size_t command_count = ARRLEN(commands);
@@ -242,6 +244,35 @@ cmd_rm_tag(const char *name)
 
 	if (!tag_rm(tag, true))
 		CMD_ERROR("Failed to remove tag");
+
+	return true;
+}
+
+bool
+cmd_rename(const char *name)
+{
+	struct link *link;
+	struct track *track;
+	struct tag *tag;
+
+	if (!*name)
+		CMD_ERROR("Supply a name");
+
+	ASSERT(pane_sel == cmd_pane);
+
+	if (pane_after_cmd == track_pane) {
+		link = list_at(tracks_vis, track_nav.sel);
+		if (!link) return false;
+		track = tracks_vis_track(link);
+		if (!track_rename(track, name))
+			return false;
+	} else if (pane_after_cmd == tag_pane) {
+		link = list_at(&tags, tag_nav.sel);
+		if (!link) return false;
+		tag = UPCAST(link, struct tag, link);
+		if (!tag_rename(tag, name))
+			return false;
+	}
 
 	return true;
 }
