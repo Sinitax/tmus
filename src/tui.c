@@ -39,7 +39,7 @@ enum {
 
 typedef char *(*completion_gen)(const char *text, int fwd, int state);
 
-static void pane_title(struct pane *pane, const char *title, int highlight);
+static void pane_title(struct pane *pane, bool highlight, const char *fmtstr, ...);
 
 static char *command_name_gen(const char *text, int fwd, int state);
 static char *track_vis_name_gen(const char *text, int fwd, int state);
@@ -129,14 +129,18 @@ static const char player_state_chars[] = {
 };
 
 void
-pane_title(struct pane *pane, const char *title, int highlight)
+pane_title(struct pane *pane, bool highlight, const char *fmtstr, ...)
 {
-	wmove(pane->win, 0, 0);
+	va_list ap;
 
 	style_on(pane->win, STYLE_TITLE);
 	if (highlight) ATTR_ON(pane->win, A_STANDOUT);
 
-	wprintw(pane->win, " %-*.*s", pane->w - 1, pane->w - 1, title);
+	pane_clearln(pane, 0);
+	wmove(pane->win, 0, 0);
+	va_start(ap, fmtstr);
+	vw_printw(pane->win, fmtstr, ap);
+	va_end(ap);
 
 	if (highlight) ATTR_OFF(pane->win, A_STANDOUT);
 	style_off(pane->win, STYLE_TITLE);
@@ -406,7 +410,7 @@ tag_pane_vis(struct pane *pane, int sel)
 	int index, tagsel;
 
 	werase(pane->win);
-	pane_title(pane, "Tags", sel);
+	pane_title(pane, sel, "Tags");
 
 	listnav_update_bounds(&tag_nav, 0, list_len(&tags));
 	listnav_update_wlen(&tag_nav, pane->h - 1);
@@ -552,10 +556,21 @@ track_pane_vis(struct pane *pane, int sel)
 {
 	struct track *track;
 	struct link *link;
+	struct tag *tag;
 	int index;
 
 	werase(pane->win);
-	pane_title(pane, "Tracks", sel);
+	if (tracks_vis == &player.playlist) {
+		pane_title(pane, sel, "Tracks (playlist)");
+	} else {
+		link = list_at(&tags, tag_nav.sel);
+		if (!link) {
+			pane_title(pane, sel, "Tracks");
+		} else {
+			tag = UPCAST(link, struct tag, link);
+			pane_title(pane, sel, "Tracks (%s)", tag->name);
+		}
+	}
 
 	listnav_update_wlen(&track_nav, pane->h - 1);
 
@@ -958,13 +973,7 @@ main_input(wint_t c)
 		player_prev();
 		break;
 	case L'P':
-		if (track_show_playlist) {
-			pane_sel = tag_pane;
-			track_show_playlist = 0;
-		} else {
-			pane_sel = track_pane;
-			track_show_playlist = 1;
-		}
+		track_show_playlist ^= 1;
 		break;
 	case L'A':
 		player.autoplay ^= 1;
