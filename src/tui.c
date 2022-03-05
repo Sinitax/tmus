@@ -1046,6 +1046,8 @@ main_input(wint_t c)
 	case L'N':
 		if (!seek_track_tag(player.track))
 			return;
+		track_show_playlist = false;
+		update_tracks_vis();
 		seek_track(player.track);
 		pane_sel = track_pane;
 		break;

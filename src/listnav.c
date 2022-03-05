@@ -3,10 +3,25 @@
 
 #include <string.h>
 
+static void listnav_update_win(struct listnav *nav);
+
+void
+listnav_update_win(struct listnav *nav)
+{
+	nav->wmin = MAX(nav->wmax - nav->wlen, nav->min);
+	nav->wmax = MIN(nav->wmin + nav->wlen, nav->max);
+	nav->sel = MAX(MIN(nav->sel, nav->wmax - 1), nav->wmin);
+}
+
 void
 listnav_init(struct listnav *nav)
 {
-	memset(nav, 0, sizeof(struct listnav));
+	nav->sel = 0;
+	nav->min = 0;
+	nav->max = 0;
+	nav->wlen = 0;
+	nav->wmin = 0;
+	nav->wmax = 0;
 }
 
 void
@@ -16,7 +31,8 @@ listnav_update_bounds(struct listnav *nav, int min, int max)
 
 	nav->min = min;
 	nav->max = max;
-	listnav_update_wlen(nav, MIN(nav->wlen, nav->max - nav->min));
+
+	listnav_update_win(nav);
 }
 
 void
@@ -24,13 +40,8 @@ listnav_update_wlen(struct listnav *nav, int wlen)
 {
 	ASSERT(wlen >= 0);
 
-	nav->wlen = MIN(wlen, nav->max - nav->min);
-	if (nav->wmin < nav->min)
-		nav->wmin = nav->min;
-	if (nav->wmin + nav->wlen > nav->max)
-		nav->wmin = nav->max - nav->wlen;
-	nav->wmax = nav->wmin + nav->wlen;
-	nav->sel = MAX(MIN(nav->sel, nav->wmax - 1), nav->wmin);
+	nav->wlen = wlen;
+	listnav_update_win(nav);
 }
 
 void
