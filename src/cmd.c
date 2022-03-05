@@ -60,6 +60,9 @@ cmd_move(const char *name)
 	if (!link) CMD_ERROR("No track selected");
 	track = tracks_vis_track(link);
 
+	if (track->tag == tag)
+		CMD_ERROR("Same tag");
+
 	newpath = aprintf("%s/%s", tag->fpath, track->name);
 	OOM_CHECK(newpath);
 
@@ -104,6 +107,9 @@ cmd_copy(const char *name)
 	link = list_at(tracks_vis, track_nav.sel);
 	if (!link) CMD_ERROR("No track selected");
 	track = tracks_vis_track(link);
+
+	if (track->tag == tag)
+		CMD_ERROR("Same tag");
 
 	newpath = aprintf("%s/%s", tag->fpath, track->name);
 	OOM_CHECK(newpath);
