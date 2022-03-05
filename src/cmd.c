@@ -62,10 +62,17 @@ cmd_move(const char *name)
 
 	newpath = aprintf("%s/%s", tag->fpath, track->name);
 	OOM_CHECK(newpath);
+
+	if (path_exists(newpath)) {
+		free(newpath);
+		CMD_ERROR("File already exists");
+	}
+
 	if (!dup_file(track->fpath, newpath)) {
 		free(newpath);
 		CMD_ERROR("Failed to move track");
 	}
+
 	free(newpath);
 
 	new = track_add(tag, track->name);
@@ -92,7 +99,7 @@ cmd_copy(const char *name)
 	char *newpath;
 
 	tag = tag_find(name);
-	if (!tag) return 0;
+	if (!tag) CMD_ERROR("Tag not found");
 
 	link = list_at(tracks_vis, track_nav.sel);
 	if (!link) CMD_ERROR("No track selected");
@@ -100,9 +107,15 @@ cmd_copy(const char *name)
 
 	newpath = aprintf("%s/%s", tag->fpath, track->name);
 	OOM_CHECK(newpath);
+
+	if (path_exists(newpath)) {
+		free(newpath);
+		CMD_ERROR("File already exists");
+	}
+
 	if (!dup_file(track->fpath, newpath)) {
 		free(newpath);
-		ERROR("Failed to copy track");
+		CMD_ERROR("Failed to copy track");
 	}
 	free(newpath);
 
@@ -112,7 +125,7 @@ cmd_copy(const char *name)
 		CMD_ERROR("Failed to copy track");
 	}
 
-	return 1;
+	return true;
 }
 
 bool

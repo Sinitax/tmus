@@ -473,6 +473,10 @@ tag_rename(struct tag *tag, const char *name)
 	free(tag->fpath);
 	tag->fpath = newpath;
 
+	free(tag->name);
+	tag->name = strdup(name);
+	OOM_CHECK(tag->name);
+
 	for (LIST_ITER(&tag->tracks, link)) {
 		track = UPCAST(link, struct track, link_tt);
 		free(track->fpath);
