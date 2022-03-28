@@ -180,7 +180,7 @@ path_exists(const char *path)
 bool
 make_dir(const char *path)
 {
-	return mkdir(path, S_IRWXU | S_IRWXG) == 0;
+	return mkdir(path, S_IRWXU | S_IRWXG | S_IRWXO) == 0;
 }
 
 bool

@@ -71,7 +71,7 @@ void player_deinit(void);
 
 void player_update(void);
 
-int player_play_track(struct track *track);
+int player_play_track(struct track *track, bool new);
 
 int player_toggle_pause(void);
 int player_pause(void);

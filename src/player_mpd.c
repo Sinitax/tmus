@@ -43,6 +43,7 @@ static int mpd_handle_status(int status);
 static bool history_contains(struct track *track, int depth);
 
 static struct track *playlist_track_lru(int skip);
+static struct track *playlist_track_next_unused(int index);
 
 static void player_play_prev(void);
 static void player_play_next(void);
@@ -127,7 +128,7 @@ playlist_track_lru(int skip)
 		if (!history_contains(track, len - 1))
 			skip -= 1;
 
-		if (skip <= 0) break;
+		if (skip < 0) break;
 
 		link = link->next;
 		if (!LIST_INNER(link))
@@ -215,7 +216,7 @@ player_play_prev(void)
 	}
 
 	track = UPCAST(next, struct track, link_hs);
-	player_play_track(track);
+	player_play_track(track, false);
 }
 
 void
@@ -223,23 +224,24 @@ player_play_next(void)
 {
 	struct track *next_track;
 	struct link *link;
-
-	next_track = NULL;
+	bool new_entry;
 
 	if (player.track && link_inuse(&player.track->link_hs)
 			&& LIST_INNER(player.track->link_hs.next)) {
 		next_track = UPCAST(player.track->link_hs.next,
 			struct track, link_hs);
+		new_entry = false;
 	} else if (!list_empty(&player.queue)) {
 		link = list_pop_front(&player.queue);
 		next_track = UPCAST(link, struct track, link_pq);
+		new_entry = true;
 	} else {
 		next_track = player_next_from_playlist();
+		if (!next_track) goto clear;
+		new_entry = true;
 	}
 
-	if (!next_track) goto clear;
-
-	player_play_track(next_track);
+	player_play_track(next_track, new_entry);
 	return;
 
 clear:
@@ -403,9 +405,11 @@ player_update(void)
 }
 
 int
-player_play_track(struct track *track)
+player_play_track(struct track *track, bool new)
 {
 	int status;
+
+	ASSERT(track != NULL);
 
 	status = mpd_run_clear(mpd.conn);
 	mpd_handle_status(status);
@@ -421,6 +425,9 @@ player_play_track(struct track *track)
 	/* add last track to history */
 	if (player.track && !link_inuse(&player.track->link_hs))
 		player_add_history(player.track);
+
+	/* new invocations result in updated history pos */
+	if (new) link_pop(&track->link_hs);
 
 	player.track = track;
 

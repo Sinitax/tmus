@@ -455,7 +455,7 @@ play_selected_track(void)
 	link = list_at(tracks_vis, track_nav.sel);
 	if (!link) return false;
 	track = tracks_vis_track(link);
-	player_play_track(track);
+	player_play_track(track, true);
 
 	return true;
 }
@@ -627,7 +627,7 @@ play_track(const char *query)
 	for (LIST_ITER(&tracks, link)) {
 		track = UPCAST(link, struct track, link);
 		if (!strcmp(track->name, query)) {
-			player_play_track(track);
+			player_play_track(track, true);
 			return true;
 		}
 	}

@@ -1,15 +1,8 @@
 #include "data.h"
-#include "history.h"
-#include "list.h"
-#include "listnav.h"
 #include "log.h"
 #include "mpris.h"
-#include "pane.h"
 #include "player.h"
-#include "ref.h"
-#include "style.h"
 #include "tui.h"
-#include "util.h"
 
 #include <locale.h>
 
