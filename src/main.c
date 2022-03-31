@@ -27,6 +27,8 @@ init(void)
 
 	on_exit(cleanup, NULL);
 	signal(SIGINT, exit);
+	signal(SIGTERM, exit);
+	signal(SIGKILL, exit);
 }
 
 void
