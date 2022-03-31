@@ -21,12 +21,6 @@ enum {
 	PLAYER_STATE_STOPPED
 };
 
-enum {
-	PLAYER_ACTION_NONE,
-	PLAYER_ACTION_PLAY_PREV,
-	PLAYER_ACTION_PLAY_NEXT
-};
-
 struct player {
 	/* list of tracks to choose from on prev / next */
 	struct list playlist; /* struct track (link_pl) */
@@ -72,6 +66,7 @@ void player_deinit(void);
 void player_update(void);
 
 int player_play_track(struct track *track, bool new);
+int player_clear_track(void);
 
 int player_toggle_pause(void);
 int player_pause(void);
@@ -83,6 +78,9 @@ int player_play(void);
 int player_stop(void);
 
 int player_set_volume(unsigned int vol);
+
+bool player_history_contains(struct track *track, int depth);
+struct track *playlist_track_next_unused(struct link *link);
 
 extern struct player player;
 
