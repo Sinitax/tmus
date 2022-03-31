@@ -1,5 +1,5 @@
 CFLAGS = -I src -g $(shell pkg-config --cflags glib-2.0 dbus-1)
-CFLAGS += -I lib/liblist/include -Wunused-variable
+CFLAGS += -I lib/liblist/include -Wunused-variable -Wmissing-prototypes
 LDLIBS = -lcurses -lmpdclient $(shell pkg-config --libs glib-2.0 dbus-1)
 DEPFLAGS = -MT $@ -MMD -MP -MF build/$*.d
 

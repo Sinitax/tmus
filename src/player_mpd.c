@@ -39,6 +39,7 @@ struct mpd_player mpd;
 static void player_clear_status(void);
 
 static bool mpd_handle_status(int status);
+static char *mpd_loaded_track_name(struct mpd_song *song);
 
 static void player_add_history(struct track *track);
 

@@ -569,7 +569,7 @@ track_rename(struct track *track, const char *name)
 }
 
 bool
-aquire_lock(const char *datadir)
+acquire_lock(const char *datadir)
 {
 	char *lockpath, *procpath;
 	char linebuf[512];
@@ -643,7 +643,7 @@ data_load(void)
 	datadir = getenv("TMUS_DATA");
 	if (!datadir) ERROR("TMUS_DATA not set!\n");
 
-	if (!aquire_lock(datadir))
+	if (!acquire_lock(datadir))
 		ERROR("Failed to acquire lock\n");
 
 	dir = opendir(datadir);

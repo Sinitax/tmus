@@ -25,6 +25,7 @@ struct track {
 
 bool path_exists(const char *path);
 bool make_dir(const char *path);
+bool move_dir(const char *dst, const char *src);
 bool rm_dir(const char *path, bool recursive);
 bool rm_file(const char *path);
 bool copy_file(const char *dst, const char *src);

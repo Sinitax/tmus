@@ -3,6 +3,10 @@
 #include "list.h"
 #include "data.h"
 
+static bool player_history_contains(struct track *cmp, int depth);
+static struct track *playlist_track_next_unused(struct link *start);
+static struct track *player_next_from_playlist(void);
+
 bool
 player_history_contains(struct track *cmp, int depth)
 {

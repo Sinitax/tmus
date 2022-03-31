@@ -79,8 +79,5 @@ int player_stop(void);
 
 int player_set_volume(unsigned int vol);
 
-bool player_history_contains(struct track *track, int depth);
-struct track *playlist_track_next_unused(struct link *link);
-
 extern struct player player;
 
