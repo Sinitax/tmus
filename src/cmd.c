@@ -42,7 +42,7 @@ bool
 cmd_save(const char *args)
 {
 	data_save();
-	return 0;
+	return true;
 }
 
 bool

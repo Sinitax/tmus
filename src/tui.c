@@ -46,7 +46,8 @@ static char *track_vis_name_gen(const char *text, int fwd, int state);
 static char *track_name_gen(const char *text, int fwd, int state);
 static char *tag_name_gen(const char *text, int fwd, int state);
 
-static void toggle_current_tag(void);
+static bool rename_current_tag(void);
+static bool toggle_current_tag(void);
 static void select_only_current_tag(void);
 static void seek_next_selected_tag(void);
 static void delete_selected_tag(void);
@@ -57,11 +58,13 @@ static void tag_pane_vis(struct pane *pane, int sel);
 static bool play_selected_track(void);
 static bool seek_track_tag(struct track *target);
 static bool seek_track(struct track *target);
-static void delete_selected_track(void);
+static bool rename_current_track(void);
+static bool delete_selected_track(void);
 
 static bool track_pane_input(wint_t c);
 static void track_pane_vis(struct pane *pane, int sel);
 
+static void select_cmd_pane(int mode);
 static bool run_cmd(const char *name);
 static bool play_track(const char *name);
 static bool seek_track_by_name(const char *name);
@@ -287,16 +290,36 @@ tag_name_gen(const char *text, int fwd, int reset)
 	return NULL;
 }
 
-void
+bool
+rename_current_tag(void)
+{
+	struct link *link;
+	struct tag *tag;
+	char *cmd;
+
+	link = list_at(&tags, track_nav.sel);
+	if (!link) return false;
+	tag = UPCAST(link, struct tag, link);
+
+	cmd = aprintf("rename %s", tag->name);
+	OOM_CHECK(cmd);
+	select_cmd_pane(IMODE_EXECUTE);
+	inputln_replace(history->input, cmd);
+	free(cmd);
+
+	return true;
+}
+
+bool
 toggle_current_tag(void)
 {
 	struct link *link;
 	struct tag *tag;
 
-	if (list_empty(&tags)) return;
+	if (list_empty(&tags)) return false;
 
 	link = list_at(&tags, tag_nav.sel);
-	ASSERT(link != NULL);
+	if (!link) return false;
 	tag = UPCAST(link, struct tag, link);
 
 	/* toggle tag in tags_sel */
@@ -305,6 +328,8 @@ toggle_current_tag(void)
 	} else {
 		list_push_back(&tags_sel, &tag->link_sel);
 	}
+
+	return true;
 }
 
 void
@@ -381,6 +406,9 @@ tag_pane_input(wint_t c)
 		break;
 	case KEY_NPAGE: /* seek half a page down */
 		listnav_update_sel(&tag_nav, tag_nav.sel + tag_nav.wlen / 2);
+		break;
+	case L'r': /* rename tag */
+		rename_current_tag();
 		break;
 	case L'g': /* seek start of list */
 		listnav_update_sel(&tag_nav, 0);
@@ -498,17 +526,40 @@ seek_track(struct track *target)
 	return true;
 }
 
-void
+bool
+rename_current_track(void)
+{
+	struct link *link;
+	struct track *track;
+	char *cmd;
+
+	link = list_at(tracks_vis, track_nav.sel);
+	if (!link) return false;
+	track = tracks_vis_track(link);
+
+	cmd = aprintf("rename %s", track->name);
+	OOM_CHECK(cmd);
+	select_cmd_pane(IMODE_EXECUTE);
+	inputln_replace(history->input, cmd);
+	free(cmd);
+
+	return true;
+}
+
+bool
 delete_selected_track(void)
 {
 	struct link *link;
 	struct track *track;
 
 	link = list_at(tracks_vis, track_nav.sel);
-	ASSERT(link != NULL);
+	if (!link) return false;
+
 	track = tracks_vis_track(link);
 	if (!track_rm(track, true))
 		CMD_SET_STATUS("Failed to remove track");
+
+	return true;
 }
 
 bool
@@ -531,6 +582,9 @@ track_pane_input(wint_t c)
 	case KEY_NPAGE: /* seek half page down */
 		listnav_update_sel(&track_nav,
 			track_nav.sel + track_nav.wlen / 2);
+		break;
+	case L'r': /* rename track */
+		rename_current_track();
 		break;
 	case L'g': /* seek start of list */
 		listnav_update_sel(&track_nav, 0);
@@ -602,6 +656,48 @@ track_pane_vis(struct pane *pane, int sel)
 		else if (index == track_nav.sel)
 			style_off(pane->win, STYLE_PREV);
 	}
+}
+
+void
+select_cmd_pane(int mode)
+{
+	switch (mode) {
+	case IMODE_EXECUTE:
+		cmd_input_mode = IMODE_EXECUTE;
+		pane_after_cmd = pane_sel;
+		history = &command_history;
+		completion = command_name_gen;
+		break;
+	case IMODE_TAG_SELECT:
+		cmd_input_mode = IMODE_TAG_SELECT;
+		pane_after_cmd = pane_sel;
+		history = &tag_select_history;
+		completion = tag_name_gen;
+		break;
+	case IMODE_TRACK_PLAY:
+		cmd_input_mode = IMODE_TRACK_PLAY;
+		pane_after_cmd = pane_sel;
+		history = &track_play_history;
+		completion = track_name_gen;
+		break;
+	case IMODE_TRACK_SELECT:
+		cmd_input_mode = IMODE_TRACK_SELECT;
+		pane_after_cmd = pane_sel;
+		history = &track_select_history;
+		completion = track_name_gen;
+		break;
+	case IMODE_TRACK_VIS_SELECT:
+		cmd_input_mode = IMODE_TRACK_VIS_SELECT;
+		pane_after_cmd = pane_sel;
+		history = &track_vis_select_history;
+		completion = track_vis_name_gen;
+		break;
+	default:
+		ASSERT(0);
+	}
+
+	pane_sel = cmd_pane;
+	completion_reset = 1;
 }
 
 bool
@@ -985,54 +1081,28 @@ main_input(wint_t c)
 		player_seek(0);
 		break;
 	case L'x':
-		if (player.state == PLAYER_STATE_PLAYING) {
+		if (player.state == PLAYER_STATE_PLAYING)
 			player_stop();
-		} else {
+		else
 			player_play();
-		}
 		break;
 	case L'.':
 		cmd_rerun();
 		break;
 	case L':':
-		cmd_input_mode = IMODE_EXECUTE;
-		pane_after_cmd = pane_sel;
-		pane_sel = &pane_bot;
-		completion_reset = 1;
-		history = &command_history;
-		completion = command_name_gen;
+		select_cmd_pane(IMODE_EXECUTE);
 		break;
 	case L'/':
-		cmd_input_mode = IMODE_TRACK_SELECT;
-		pane_after_cmd = pane_sel;
-		pane_sel = cmd_pane;
-		completion_reset = 1;
-		history = &track_select_history;
-		completion = track_name_gen;
+		select_cmd_pane(IMODE_TRACK_SELECT);
 		break;
 	case L'~':
-		cmd_input_mode = IMODE_TRACK_VIS_SELECT;
-		pane_after_cmd = pane_sel;
-		pane_sel = cmd_pane;
-		completion_reset = 1;
-		history = &track_vis_select_history;
-		completion = track_vis_name_gen;
+		select_cmd_pane(IMODE_TRACK_VIS_SELECT);
 		break;
 	case L'!':
-		cmd_input_mode = IMODE_TRACK_PLAY;
-		pane_after_cmd = pane_sel;
-		pane_sel = cmd_pane;
-		completion_reset = 1;
-		history = &track_play_history;
-		completion = track_name_gen;
+		select_cmd_pane(IMODE_TRACK_PLAY);
 		break;
 	case L'?':
-		cmd_input_mode = IMODE_TAG_SELECT;
-		pane_after_cmd = pane_sel;
-		pane_sel = cmd_pane;
-		completion_reset = 1;
-		history = &tag_select_history;
-		completion = tag_name_gen;
+		select_cmd_pane(IMODE_TAG_SELECT);
 		break;
 	case L'+':
 		player_set_volume(MIN(100, player.volume + 5));
