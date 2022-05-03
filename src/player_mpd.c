@@ -121,7 +121,7 @@ player_init(void)
 	player.shuffle = true;
 
 	player.state = PLAYER_STATE_PAUSED;
-	player.volume = 0;
+	player.volume = 50;
 
 	player.time_pos = 0;
 	player.time_end = 0;
@@ -146,18 +146,20 @@ player_deinit(void)
 void
 player_update(void)
 {
+	static bool init = false;
 	struct mpd_status *status;
 	struct mpd_song *current_song;
 	bool queue_empty;
 
 	if (!mpd.conn) {
+		if (init) PLAYER_STATUS(ERR, "MPD: Connection reset");
+		init = true;
 		mpd.conn = mpd_connection_new(NULL, 0, 0);
-		if (!mpd.conn) ERROR("MPD: Connect to server failed\n");
+		if (!mpd.conn) ERROR("MPD: Connection failed\n");
 	}
 
 	status = mpd_run_status(mpd.conn);
 	if (!status) {
-		PLAYER_STATUS(ERR, "Resetting MPD server connection");
 		mpd_connection_free(mpd.conn);
 		mpd.conn = NULL;
 		return;
@@ -218,7 +220,10 @@ player_update(void)
 		PANIC();
 	}
 
-	player.volume = mpd_status_get_volume(status);
+	if (player.volume >= 0 && player.volume != mpd_status_get_volume(status))
+		mpd_run_set_volume(mpd.conn, player.volume);
+	else
+		player.volume = mpd_status_get_volume(status);
 
 	if (mpd.seek_delay) {
 		mpd.seek_delay -= 1;
@@ -368,6 +373,7 @@ player_set_volume(unsigned int vol)
 	status = mpd_run_set_volume(mpd.conn, vol);
 	if (!mpd_handle_status(status))
 		return PLAYER_STATUS_ERR;
+	player.volume = vol;
 
 	return PLAYER_STATUS_OK;
 }
