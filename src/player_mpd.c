@@ -146,20 +146,19 @@ player_deinit(void)
 void
 player_update(void)
 {
-	static bool init = false;
 	struct mpd_status *status;
 	struct mpd_song *current_song;
 	bool queue_empty;
 
 	if (!mpd.conn) {
-		if (init) PLAYER_STATUS(ERR, "MPD: Connection reset");
-		init = true;
 		mpd.conn = mpd_connection_new(NULL, 0, 0);
 		if (!mpd.conn) ERROR("MPD: Connection failed\n");
 	}
 
 	status = mpd_run_status(mpd.conn);
 	if (!status) {
+		PLAYER_STATUS(ERR, "MPD connection reset: %s",
+			mpd_connection_get_error_message(mpd.conn));
 		mpd_connection_free(mpd.conn);
 		mpd.conn = NULL;
 		return;
@@ -183,7 +182,8 @@ player_update(void)
 	 * get status and track name again.. */
 	status = mpd_run_status(mpd.conn);
 	if (!status) {
-		PLAYER_STATUS(ERR, "Resetting MPD server connection");
+		PLAYER_STATUS(ERR, "MPD connection reset: %s",
+			mpd_connection_get_error_message(mpd.conn));
 		mpd_connection_free(mpd.conn);
 		mpd.conn = NULL;
 		return;
@@ -220,10 +220,7 @@ player_update(void)
 		PANIC();
 	}
 
-	if (player.volume >= 0 && player.volume != mpd_status_get_volume(status))
-		mpd_run_set_volume(mpd.conn, player.volume);
-	else
-		player.volume = mpd_status_get_volume(status);
+	player.volume = mpd_status_get_volume(status);
 
 	if (mpd.seek_delay) {
 		mpd.seek_delay -= 1;
