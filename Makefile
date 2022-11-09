@@ -15,7 +15,8 @@ DEPS = $(OBJS:%.o=%.d)
 
 LIBLIST_A = lib/liblist/build/liblist.a
 
-.PHONY: all tmus clean cleanlibs install uninstall
+PREFIX ?= /usr/local
+BINDIR ?= /bin
 
 all: tmus
 
@@ -41,9 +42,10 @@ $(LIBLIST_A):
 tmus: $(OBJS) $(LIBLIST_A)
 	$(CC) -o tmus $^ $(CFLAGS) $(LDLIBS)
 
-install:
-	install -m 755 tmus /usr/bin
+install: tmus
+	install -m755 $< -t "$(DESTDIR)$(PREFIX)$(BINDIR)"
 
 uninstall:
-	rm -f /usr/bin/tmus
+	rm -f "$(DESTDIR)$(PREFIX)$(BINDIR)"
 
+.PHONY: all clean cleanlibs install uninstall
