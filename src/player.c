@@ -100,17 +100,10 @@ player_next_from_playlist(void)
 void
 player_add_history(struct track *new)
 {
-	struct link *link;
-	struct track *track;
-
-	link = list_back(&player.history);
-	if (link) {
-		track = UPCAST(link, struct track, link_hs);
-		if (track == new) return;
+	if (!link_inuse(&new->link_hs)) {
+		link_pop(&new->link_hs);
+		list_push_back(&player.history, &new->link_hs);
 	}
-
-	link_pop(&new->link_hs);
-	list_push_back(&player.history, &new->link_hs);
 }
 
 /* implemented by backend:

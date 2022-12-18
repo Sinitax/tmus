@@ -90,7 +90,7 @@ mplay_run(struct track *track)
 	line = mplay_readline();
 	if (!line || strcmp(line, "+READY")) {
 		mplay_kill();
-		PLAYER_STATUS(ERR, "mplay failed to start");
+		PLAYER_STATUS(ERR, "Failed to start");
 		return false;
 	}
 
@@ -179,7 +179,7 @@ player_update(void)
 	fprintf(mplay.stdin, "status\n");
 	line = mplay_readline();
 	if (!line || strncmp(line, "+STATUS:", 8)) {
-		PLAYER_STATUS(ERR, "PLAYER: invalid response");
+		PLAYER_STATUS(ERR, "Bad response");
 		return;
 	}
 
@@ -202,16 +202,13 @@ int
 player_play_track(struct track *track, bool new)
 {
 	ASSERT(track != NULL);
+
 	player_clear_track();
 
 	if (!mplay_run(track))
 		return PLAYER_STATUS_ERR;
 
-	/* add last track to history */
-	if (player.track && !link_inuse(&player.track->link_hs))
-		player_add_history(player.track);
-
-	/* new invocations result in updated history pos */
+	/* new invocations are removed from history */
 	if (new) link_pop(&track->link_hs);
 
 	player.track = track;
@@ -224,6 +221,9 @@ player_play_track(struct track *track, bool new)
 int
 player_clear_track(void)
 {
+	if (player.track)
+		player_add_history(player.track);
+
 	player.track = NULL;
 	mplay_kill();
 
@@ -238,7 +238,7 @@ player_toggle_pause(void)
 	fprintf(mplay.stdin, "pause\n");
 	line = mplay_readline();
 	if (!line || strncmp(line, "+PAUSE:", 7)) {
-		PLAYER_STATUS(ERR, "PLAYER: invalid response");
+		PLAYER_STATUS(ERR, "Bad response");
 		return PLAYER_STATUS_ERR;
 	}
 
@@ -287,7 +287,7 @@ player_seek(int sec)
 	fprintf(mplay.stdin, "seek %i\n", sec);
 	line = mplay_readline();
 	if (!line || strncmp(line, "+SEEK:", 6)) {
-		PLAYER_STATUS(ERR, "PLAYER: Bad response");
+		PLAYER_STATUS(ERR, "Bad response");
 		return PLAYER_STATUS_ERR;
 	}
 
@@ -312,7 +312,7 @@ player_set_volume(unsigned int vol)
 	fprintf(mplay.stdin, "vol %i\n", vol);
 	line = mplay_readline();
 	if (!line || strncmp(line, "+VOLUME:", 8)) {
-		PLAYER_STATUS(ERR, "PLAYER: Bad response");
+		PLAYER_STATUS(ERR, "Bad response");
 		return PLAYER_STATUS_ERR;
 	}
 
