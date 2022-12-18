@@ -3,6 +3,12 @@
 #include "list.h"
 #include "util.h"
 
+#define PLAYER_STATUS(lvl, ...) do { \
+		player.status_lvl = PLAYER_STATUS_MSG_ ## lvl; \
+		if (player.status) free(player.status); \
+		player.status = aprintf(__VA_ARGS__); \
+	} while (0)
+
 enum {
 	PLAYER_STATUS_OK,
 	PLAYER_STATUS_ERR

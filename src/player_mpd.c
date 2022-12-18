@@ -16,12 +16,6 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#define PLAYER_STATUS(lvl, ...) do { \
-		player.status_lvl = PLAYER_STATUS_MSG_ ## lvl; \
-		if (player.status) free(player.status); \
-		player.status = aprintf(__VA_ARGS__); \
-	} while (0)
-
 struct mpd_player {
 	struct mpd_connection *conn;
 

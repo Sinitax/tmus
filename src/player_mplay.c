@@ -16,12 +16,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define PLAYER_STATUS(lvl, ...) do { \
-		player.status_lvl = PLAYER_STATUS_MSG_ ## lvl; \
-		if (player.status) free(player.status); \
-		player.status = aprintf(__VA_ARGS__); \
-	} while (0)
-
 struct mplay_player {
 	FILE *stdin;
 	FILE *stdout;
@@ -31,11 +25,20 @@ struct mplay_player {
 struct player player;
 struct mplay_player mplay;
 
+static void sigpipe_handler(int sig);
+
 static bool mplay_alive(void);
 static void mplay_kill(void);
 static bool mplay_run(struct track *track);
 static char *mplay_readline(void);
+
 static void player_clear_status(void);
+
+void
+sigpipe_handler(int sig)
+{
+	mplay_kill();
+}
 
 bool
 mplay_alive(void)
@@ -115,8 +118,10 @@ mplay_readline(void)
 	char *tok;
 
 	/* TODO: add timeout */
-	if (!fgets(linebuf, sizeof(linebuf), mplay.stdout))
+	if (!mplay.stdout || !fgets(linebuf, sizeof(linebuf), mplay.stdout)) {
+		mplay_kill(); /* dont clear track yet */
 		return NULL;
+	}
 
 	tok = strchr(linebuf, '\n');
 	if (tok) *tok = '\0';
@@ -154,6 +159,8 @@ player_init(void)
 
 	player.status = NULL;
 	player.status_lvl = PLAYER_STATUS_MSG_INFO;
+
+	signal(SIGPIPE, sigpipe_handler);
 }
 
 void
@@ -172,12 +179,24 @@ player_deinit(void)
 void
 player_update(void)
 {
+	bool queue_empty;
 	char *tok, *line;
+
+	if (!player.loaded) {
+		queue_empty = list_empty(&player.queue);
+		if (player.track && player.autoplay || !queue_empty) {
+			if (player_next() != PLAYER_STATUS_OK)
+				player_clear_track();
+		} else if (player.track) {
+			player_clear_track();
+		}
+	}
 
 	if (!player.loaded) return;
 
 	fprintf(mplay.stdin, "status\n");
 	line = mplay_readline();
+	if (!player.loaded) return;
 	if (!line || strncmp(line, "+STATUS:", 8)) {
 		PLAYER_STATUS(ERR, "Bad response");
 		return;
