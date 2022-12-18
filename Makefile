@@ -1,15 +1,19 @@
 CFLAGS = -I src -g $(shell pkg-config --cflags glib-2.0 dbus-1)
 CFLAGS += -I lib/liblist/include -Wunused-variable -Wmissing-prototypes
-LDLIBS = -lcurses -lmpdclient $(shell pkg-config --libs glib-2.0 dbus-1)
+LDLIBS = -lcurses $(shell pkg-config --libs glib-2.0 dbus-1)
 DEPFLAGS = -MT $@ -MMD -MP -MF build/$*.d
 
 ifeq "$(PROF)" "YES"
 	CFLAGS += -pg
 endif
 
-BACKEND ?= mpd
+BACKEND ?= mplay
 
-SRCS = $(wildcard src/*.c)
+ifeq "$(BACKEND)" "mpd"
+	LDLIBS += -lmpdclient
+endif
+
+SRCS = $(filter-out src/player_%.c, $(wildcard src/*.c))
 OBJS = $(SRCS:src/%.c=build/%.o) build/player_$(BACKEND).o
 DEPS = $(OBJS:%.o=%.d)
 

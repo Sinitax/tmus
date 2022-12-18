@@ -41,8 +41,6 @@ static void player_clear_status(void);
 static bool mpd_handle_status(int status);
 static char *mpd_loaded_track_name(struct mpd_song *song);
 
-static void player_add_history(struct track *track);
-
 void
 player_clear_status(void)
 {
@@ -85,22 +83,6 @@ mpd_loaded_track_name(struct mpd_song *song)
 	if (!sep) return strdup(path);
 
 	return strdup(sep + 1);
-}
-
-void
-player_add_history(struct track *new)
-{
-	struct link *link;
-	struct track *track;
-
-	link = list_back(&player.history);
-	if (link) {
-		track = UPCAST(link, struct track, link_hs);
-		if (track == new) return;
-	}
-
-	link_pop(&new->link_hs);
-	list_push_back(&player.history, &new->link_hs);
 }
 
 void

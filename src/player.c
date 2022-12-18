@@ -86,6 +86,40 @@ player_next_from_playlist(void)
 	return NULL;
 }
 
+/* implemented by backend:
+ *
+ * void player_init(void);
+ * void player_deinit(void);
+ *
+ * void player_update(void);
+ *
+ * int player_play_track(struct track *track, bool new);
+ * int player_clear_track(void);
+ */
+
+void
+player_add_history(struct track *new)
+{
+	struct link *link;
+	struct track *track;
+
+	link = list_back(&player.history);
+	if (link) {
+		track = UPCAST(link, struct track, link_hs);
+		if (track == new) return;
+	}
+
+	link_pop(&new->link_hs);
+	list_push_back(&player.history, &new->link_hs);
+}
+
+/* implemented by backend:
+ *
+ * int player_toggle_pause(void);
+ * int player_pause(void);
+ * int player_resume(void);
+ */
+
 int
 player_prev(void)
 {
@@ -139,4 +173,12 @@ clear:
 	return PLAYER_STATUS_ERR;
 }
 
+/* implemented by backend:
+ *
+ * int player_seek(int sec);
+ * int player_play(void);
+ * int player_stop(void);
+ *
+ * int player_set_volume(unsigned int vol);
+ */
 

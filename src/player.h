@@ -68,6 +68,8 @@ void player_update(void);
 int player_play_track(struct track *track, bool new);
 int player_clear_track(void);
 
+void player_add_history(struct track *track);
+
 int player_toggle_pause(void);
 int player_pause(void);
 int player_resume(void);

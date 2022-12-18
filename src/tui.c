@@ -1044,11 +1044,11 @@ main_input(wint_t c)
 		break;
 	case KEY_LEFT:
 		if (!player.loaded) break;
-		player_seek(MAX(player.time_pos - 10, 0));
+		player_seek(player.time_pos - 10);
 		break;
 	case KEY_RIGHT:
 		if (!player.loaded) break;
-		player_seek(MIN(player.time_pos + 10, player.time_end));
+		player_seek(player.time_pos + 10);
 		break;
 	case L'y':
 		queue_hover();
