@@ -182,6 +182,8 @@ player_update(void)
 	bool queue_empty;
 	char *tok, *line;
 
+	player_clear_status();
+
 	if (!player.loaded) {
 		queue_empty = list_empty(&player.queue);
 		if (player.track && player.autoplay || !queue_empty) {
