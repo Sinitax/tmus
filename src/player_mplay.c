@@ -84,7 +84,7 @@ mplay_run(struct track *track)
 		close(output[1]);
 		path = aprintf("%s/%s/%s", datadir,
 			track->tag->name, track->name);
-		execl("/usr/bin/mplay", "mplay", path, NULL);
+		execl("/usr/bin/mplay", "mplay", "-i", path, NULL);
 		abort();
 	}
 
