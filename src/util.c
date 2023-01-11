@@ -5,7 +5,7 @@
 #include "tui.h"
 
 #include <execinfo.h>
-
+#include <err.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
@@ -56,20 +56,32 @@ error(const char *fmtstr, ...)
 }
 
 char *
+astrdup(const char *str)
+{
+	char *alloc;
+
+	alloc = strdup(str);
+	if (!alloc) err(1, "strdup");
+
+	return alloc;
+}
+
+char *
 aprintf(const char *fmtstr, ...)
 {
 	va_list ap, cpy;
-	size_t size;
+	ssize_t size;
 	char *str;
 
 	va_copy(cpy, ap);
 
 	va_start(ap, fmtstr);
 	size = vsnprintf(NULL, 0, fmtstr, ap);
+	if (size < 0) err(1, "snprintf");
 	va_end(ap);
 
 	str = malloc(size + 1);
-	if (!str) return NULL;
+	if (!str) err(1, "malloc");
 
 	va_start(cpy, fmtstr);
 	vsnprintf(str, size + 1, fmtstr, cpy);
@@ -108,9 +120,7 @@ sanitized(const char *instr)
 	char *clean;
 	int i;
 
-	clean = strdup(instr);
-	OOM_CHECK(clean);
-
+	clean = astrdup(instr);
 	for (i = 0, p = instr; *p; p++) {
 		if (strchr(allowed, *p))
 			clean[i++] = *p;

@@ -7,6 +7,7 @@
 struct tag {
 	char *name, *fpath;
 	struct list tracks;
+	bool dirty;
 
 	struct link link;     /* tags list */
 	struct link link_sel; /* selected tags list */ 

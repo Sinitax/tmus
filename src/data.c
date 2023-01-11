@@ -9,7 +9,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
-
+#include <err.h>
 #include <stdbool.h>
 #include <string.h>
 
@@ -44,13 +44,10 @@ tag_alloc(const char *path, const char *fname)
 	struct tag *tag;
 
 	tag = malloc(sizeof(struct tag));
-	ASSERT(tag != NULL);
+	if (!tag) err(1, "malloc");
 
 	tag->fpath = aprintf("%s/%s", path, fname);
-	ASSERT(tag->fpath != NULL);
-
-	tag->name = strdup(fname);
-	ASSERT(tag->name != NULL);
+	tag->name = astrdup(fname);
 
 	tag->link = LINK_EMPTY;
 	tag->link_sel = LINK_EMPTY;
@@ -75,13 +72,10 @@ track_alloc(const char *dir, const char *fname)
 	struct track *track;
 
 	track = malloc(sizeof(struct track));
-	ASSERT(track != NULL);
+	if (!track) err(1, "malloc");
 
 	track->fpath = aprintf("%s/%s", dir, fname);
-	ASSERT(track->fpath != NULL);
-
-	track->name = strdup(fname);
-	ASSERT(track->name != NULL);
+	track->name = astrdup(fname);
 
 	track->tag = NULL;
 
@@ -121,13 +115,12 @@ tracks_load(struct tag *tag)
 	FILE *file;
 
 	index_path = aprintf("%s/index", tag->fpath);
-	OOM_CHECK(index_path);
 
 	file = fopen(index_path, "r");
 	if (file == NULL) {
 		index_update(tag); /* create index */
 		file = fopen(index_path, "r");
-		ASSERT(file != NULL);
+		if (!file) err(1, "fopen %s", tag->name);
 	}
 
 	while (fgets(linebuf, sizeof(linebuf), file)) {
@@ -152,7 +145,6 @@ tracks_save(struct tag *tag)
 	/* write playlist back to index file */
 
 	index_path = aprintf("%s/index", tag->fpath);
-	OOM_CHECK(index_path);
 
 	file = fopen(index_path, "w+");
 	if (!file) {
@@ -295,7 +287,6 @@ index_update(struct tag *tag)
 	if (!dir) ERROR("Failed to access dir: %s\n", tag->fpath);
 
 	index_path = aprintf("%s/index", tag->fpath);
-	OOM_CHECK(index_path);
 
 	file = fopen(index_path, "w+");
 	if (!file) ERROR("Failed to create index file in dir %s\n", tag->name);
@@ -405,7 +396,6 @@ tag_add(const char *fname)
 
 	/* add to tags list */
 	tag = tag_alloc(datadir, fname);
-	OOM_CHECK(tag);
 	list_push_back(&tags, &tag->link);
 
 	return tag;
@@ -463,7 +453,6 @@ tag_rename(struct tag *tag, const char *name)
 	char *newpath;
 
 	newpath = aprintf("%s/%s", datadir, name);
-	OOM_CHECK(newpath);
 
 	if (!move_dir(tag->fpath, newpath)) {
 		free(newpath);
@@ -474,14 +463,12 @@ tag_rename(struct tag *tag, const char *name)
 	tag->fpath = newpath;
 
 	free(tag->name);
-	tag->name = strdup(name);
-	OOM_CHECK(tag->name);
+	tag->name = astrdup(name);
 
 	for (LIST_ITER(&tag->tracks, link)) {
 		track = UPCAST(link, struct track, link_tt);
 		free(track->fpath);
 		track->fpath = aprintf("%s/%s", newpath, track->name);
-		OOM_CHECK(track->fpath);
 	}
 
 	return true;
@@ -493,12 +480,10 @@ track_add(struct tag *tag, const char *fname)
 	struct track *track;
 
 	track = track_alloc(tag->fpath, fname);
-	OOM_CHECK(track);
-
 	track->tag = tag;
 
 	/* insert track into sorted tracks list */
-	list_insert_sorted(&tracks, &track->link, track_name_compare);
+	list_push_back(&tracks, &track->link);
 
 	/* add to tag's tracks list */
 	list_push_back(&tag->tracks, &track->link_tt);
@@ -546,7 +531,6 @@ track_rename(struct track *track, const char *name)
 	char *newpath;
 
 	newpath = aprintf("%s/%s", track->tag->fpath, name);
-	OOM_CHECK(newpath);
 
 	if (path_exists(newpath)) {
 		free(newpath);
@@ -562,8 +546,7 @@ track_rename(struct track *track, const char *name)
 	track->fpath = newpath;
 
 	free(track->name);
-	track->name = strdup(name);
-	OOM_CHECK(track->name);
+	track->name = astrdup(name);
 
 	return true;
 }
@@ -577,8 +560,6 @@ acquire_lock(const char *datadir)
 	int pid;
 
 	lockpath = aprintf("%s/.lock", datadir);
-	OOM_CHECK(lockpath);
-
 	if (path_exists(lockpath)) {
 		file = fopen(lockpath, "r");
 		if (file == NULL) {
@@ -589,7 +570,6 @@ acquire_lock(const char *datadir)
 		fgets(linebuf, sizeof(linebuf), file);
 		pid = strtol(linebuf, NULL, 10);
 		procpath = aprintf("/proc/%i", pid);
-		OOM_CHECK(procpath);
 		if (path_exists(procpath)) {
 			free(procpath);
 			free(lockpath);
@@ -618,7 +598,6 @@ release_lock(const char *datadir)
 	bool status;
 
 	lockpath = aprintf("%s/.lock", datadir);
-	OOM_CHECK(lockpath);
 
 	status = rm_file(lockpath);
 
@@ -656,7 +635,6 @@ data_load(void)
 			continue;
 
 		path = aprintf("%s/%s", datadir, ent->d_name);
-		OOM_CHECK(path);
 
 		if (!stat(path, &st) && S_ISDIR(st.st_mode)) {
 			tag = tag_add(ent->d_name);

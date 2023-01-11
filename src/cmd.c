@@ -64,8 +64,6 @@ cmd_move(const char *name)
 		CMD_ERROR("Same tag");
 
 	newpath = aprintf("%s/%s", tag->fpath, track->name);
-	OOM_CHECK(newpath);
-
 	if (path_exists(newpath)) {
 		free(newpath);
 		CMD_ERROR("File already exists");
@@ -112,8 +110,6 @@ cmd_copy(const char *name)
 		CMD_ERROR("Same tag");
 
 	newpath = aprintf("%s/%s", tag->fpath, track->name);
-	OOM_CHECK(newpath);
-
 	if (path_exists(newpath)) {
 		free(newpath);
 		CMD_ERROR("File already exists");
@@ -180,8 +176,7 @@ cmd_reindex(const char *name)
 	/* save old playing track */
 	if (player.track) {
 		playing_tag = player.track->tag;
-		playing_name = strdup(player.track->name);
-		OOM_CHECK(playing_name);
+		playing_name = astrdup(player.track->name);
 	}
 
 	/* update each tag specified */
@@ -225,7 +220,6 @@ cmd_add_tag(const char *name)
 	}
 
 	fpath = aprintf("%s/%s", datadir, name);
-	OOM_CHECK(fpath);
 
 	if (!make_dir(fpath)) {
 		free(fpath);
@@ -324,8 +318,7 @@ cmd_run(const char *query, bool *found)
 			args = sep ? sep + 1 : "";
 
 			free(last_args);
-			last_args = strdup(args);
-			OOM_CHECK(last_args);
+			last_args = astrdup(args);
 
 			*found = true;
 			return commands[i].func(args);

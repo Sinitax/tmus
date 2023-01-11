@@ -1,6 +1,7 @@
 #include "log.h"
 #include "util.h"
 
+#include <err.h>
 #include <stdbool.h>
 #include <stdlib.h>
 
@@ -18,7 +19,7 @@ log_init(void)
 	if (!envstr) return;
 
 	log_file = fopen(envstr, "w+");
-	if (!log_file) PANIC("Failed to open log file\n");
+	if (!log_file) err(1, "fopen %s", envstr);
 
 	log_active = true;
 }

@@ -2,6 +2,7 @@
 
 #include "util.h"
 
+#include <err.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
@@ -32,7 +33,8 @@ void
 strbuf_append(struct strbuf *strbuf, const char *fmt, ...)
 {
 	va_list ap, cpy;
-	int blen, slen;
+	ssize_t slen;
+	int blen;
 
 	va_copy(cpy, ap);
 
@@ -40,13 +42,13 @@ strbuf_append(struct strbuf *strbuf, const char *fmt, ...)
 
 	va_start(cpy, fmt);
 	slen = vsnprintf(NULL, 0, fmt, cpy);
-	ASSERT(slen >= 0);
+	if (slen < 0) err(1, "snprintf");
 	va_end(cpy);
 
 	if (blen + slen + 1 > strbuf->cap) {
 		strbuf->cap = blen + slen + 1;
 		strbuf->buf = realloc(strbuf->buf, strbuf->cap);
-		OOM_CHECK(strbuf->buf);
+		if (strbuf->buf) err(1, "realloc");
 	}
 
 	va_start(ap, fmt);

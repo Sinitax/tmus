@@ -167,8 +167,7 @@ command_name_gen(const char *text, int fwd, int reset)
 
 	while (index >= 0 && index < command_count) {
 		if (!strncmp(commands[index].name, text, len)) {
-			dup = strdup(commands[index].name);
-			OOM_CHECK(dup);
+			dup = astrdup(commands[index].name);
 			return dup;
 		}
 		index += dir;
@@ -205,8 +204,7 @@ track_vis_name_gen(const char *text, int fwd, int reset)
 
 		if (strcasestr(track->name, text)) {
 			cur = link;
-			dup = strdup(track->name);
-			OOM_CHECK(dup);
+			dup = astrdup(track->name);
 			return dup;
 		}
 
@@ -248,8 +246,7 @@ track_name_gen(const char *text, int fwd, int reset)
 
 		if (strcasestr(track->name, text)) {
 			cur = link;
-			dup = strdup(track->name);
-			OOM_CHECK(dup);
+			dup = astrdup(track->name);
 			return dup;
 		}
 
@@ -280,8 +277,7 @@ tag_name_gen(const char *text, int fwd, int reset)
 		tag = UPCAST(link, struct tag, link);
 		if (strcasestr(tag->name, text)) {
 			cur = link;
-			dup = strdup(tag->name);
-			OOM_CHECK(dup);
+			dup = astrdup(tag->name);
 			return dup;
 		}
 		link = fwd ? link->next : link->prev;
@@ -302,7 +298,6 @@ rename_current_tag(void)
 	tag = UPCAST(link, struct tag, link);
 
 	cmd = aprintf("rename %s", tag->name);
-	OOM_CHECK(cmd);
 	select_cmd_pane(IMODE_EXECUTE);
 	inputln_replace(history->input, cmd);
 	free(cmd);
@@ -538,7 +533,6 @@ rename_current_track(void)
 	track = tracks_vis_track(link);
 
 	cmd = aprintf("rename %s", track->name);
-	OOM_CHECK(cmd);
 	select_cmd_pane(IMODE_EXECUTE);
 	inputln_replace(history->input, cmd);
 	free(cmd);
@@ -1303,5 +1297,4 @@ tui_restore(void)
 	if (!isendwin())
 		endwin();
 }
-
 

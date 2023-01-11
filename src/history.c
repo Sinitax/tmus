@@ -3,13 +3,14 @@
 #include "history.h"
 #include "util.h"
 
+#include <err.h>
 #include <string.h>
 
-static struct inputln *
-history_list_prev(struct inputln  *cur, const char *search);
+static struct inputln *history_list_prev(
+	struct inputln  *cur, const char *search);
 
-static struct inputln *
-history_list_next(struct inputln  *cur, const char *search);
+static struct inputln *history_list_next(
+	struct inputln  *cur, const char *search);
 
 struct inputln *
 history_list_prev(struct inputln *cur, const char *search)
@@ -139,7 +140,7 @@ inputln_alloc(void)
 	struct inputln *ln;
 
 	ln = malloc(sizeof(struct inputln));
-	OOM_CHECK(ln);
+	if (!ln) err(1, "malloc");
 	inputln_init(ln);
 
 	return ln;
@@ -159,7 +160,7 @@ inputln_resize(struct inputln *ln, size_t size)
 
 	ln->cap = size;
 	ln->buf = realloc(ln->buf, ln->cap * sizeof(char));
-	OOM_CHECK(ln->buf);
+	if (!ln->buf) err(1, "realloc");
 	ln->len = MIN(ln->len, ln->cap-1);
 	ln->buf[ln->len] = '\0';
 }
@@ -222,8 +223,7 @@ inputln_copy(struct inputln *dst, struct inputln *src)
 		dst->buf = NULL;
 	}
 	dst->len = src->len;
-	dst->buf = strdup(src->buf);
-	OOM_CHECK(dst->buf);
+	dst->buf = astrdup(src->buf);
 	dst->cap = src->len + 1;
 	dst->cur = dst->len;
 }

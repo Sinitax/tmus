@@ -74,9 +74,9 @@ mpd_loaded_track_name(struct mpd_song *song)
 	path = mpd_song_get_uri(song);
 
 	sep = strrchr(path, '/');
-	if (!sep) return strdup(path);
+	if (!sep) return astrdup(path);
 
-	return strdup(sep + 1);
+	return astrdup(sep + 1);
 }
 
 void
@@ -169,7 +169,6 @@ player_update(void)
 	if (current_song) {
 		free(player.track_name);
 		player.track_name = mpd_loaded_track_name(current_song);
-		OOM_CHECK(player.track_name);
 		player.loaded = true;
 		player.time_pos = mpd_status_get_elapsed_time(status);
 		player.time_end = mpd_song_get_duration(current_song);

@@ -1,13 +1,15 @@
 #include "ref.h"
 #include "util.h"
 
+#include <err.h>
+
 struct ref *
 ref_alloc(void *data)
 {
 	struct ref *ref;
 
 	ref = malloc(sizeof(struct ref));
-	if (!ref) return NULL;
+	if (!ref) err(1, "malloc");
 
 	ref->link = LINK_EMPTY;
 	ref->data = data;

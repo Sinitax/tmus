@@ -97,7 +97,7 @@ dbus_init(void)
 	ret = dbus_bus_request_name(dbus_conn, "org.mpris.MediaPlayer2.tmus",
 		DBUS_NAME_FLAG_REPLACE_EXISTING, &err);
 	if (dbus_error_is_set(&err))
-		PANIC("Failed to register as MPRIS service\n");
+		errx(1, "mpris register failed");
 
 	log_info("DBus active!\n");
 
