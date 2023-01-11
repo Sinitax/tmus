@@ -82,6 +82,20 @@ static void main_vis(void);
 static void tui_curses_init(void);
 static void tui_resize(void);
 
+static const char imode_prefix[IMODE_COUNT] = {
+	[IMODE_EXECUTE] = ':',
+	[IMODE_TRACK_PLAY] = '!',
+	[IMODE_TRACK_SELECT] = '/',
+	[IMODE_TRACK_VIS_SELECT] = '~',
+	[IMODE_TAG_SELECT] = '?',
+};
+
+static const char player_state_chars[] = {
+	[PLAYER_STATE_PAUSED] = '|',
+	[PLAYER_STATE_PLAYING] = '>',
+	[PLAYER_STATE_STOPPED] = '#'
+};
+
 static int scrw, scrh;
 static int quit;
 
@@ -116,20 +130,6 @@ struct listnav track_nav;
 
 char *cmd_status;
 int cmd_status_uptime;
-
-const char imode_prefix[IMODE_COUNT] = {
-	[IMODE_EXECUTE] = ':',
-	[IMODE_TRACK_PLAY] = '!',
-	[IMODE_TRACK_SELECT] = '/',
-	[IMODE_TRACK_VIS_SELECT] = '~',
-	[IMODE_TAG_SELECT] = '?',
-};
-
-static const char player_state_chars[] = {
-	[PLAYER_STATE_PAUSED] = '|',
-	[PLAYER_STATE_PLAYING] = '>',
-	[PLAYER_STATE_STOPPED] = '#'
-};
 
 void
 pane_title(struct pane *pane, bool highlight, const char *fmtstr, ...)
@@ -390,11 +390,11 @@ tag_pane_input(wint_t c)
 		break;
 	case KEY_SPACE: /* toggle tag */
 		toggle_current_tag();
-		playlist_update(false);
+		playlist_outdated = true;
 		break;
 	case KEY_ENTER: /* select only current tag */
 		select_only_current_tag();
-		playlist_update(false);
+		playlist_outdated = true;
 		break;
 	case KEY_PPAGE: /* seek half a page up */
 		listnav_update_sel(&tag_nav, tag_nav.sel - tag_nav.wlen / 2);
@@ -416,7 +416,7 @@ tag_pane_input(wint_t c)
 		break;
 	case L'D': /* delete tag */
 		delete_selected_tag();
-		playlist_update(false);
+		playlist_outdated = true;
 		break;
 	default:
 		return false;
@@ -1273,7 +1273,7 @@ tui_update(void)
 		if (!handled) main_input(c);
 	}
 
-	playlist_update(true);
+	playlist_update();
 	update_tracks_vis();
 
 	refresh();

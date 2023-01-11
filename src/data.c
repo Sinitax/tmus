@@ -19,6 +19,8 @@ struct list tracks; /* struct track (link) */
 struct list tags; /* struct track (link) */
 struct list tags_sel; /* struct tag (link_sel) */
 
+bool playlist_outdated;
+
 static int get_fid(const char *path);
 
 static struct tag *tag_alloc(const char *path, const char *fname);
@@ -48,10 +50,9 @@ tag_alloc(const char *path, const char *fname)
 
 	tag->fpath = aprintf("%s/%s", path, fname);
 	tag->name = astrdup(fname);
-
+	tag->index_dirty = false;
 	tag->link = LINK_EMPTY;
 	tag->link_sel = LINK_EMPTY;
-
 	list_init(&tag->tracks);
 
 	return tag;
@@ -76,9 +77,7 @@ track_alloc(const char *dir, const char *fname)
 
 	track->fpath = aprintf("%s/%s", dir, fname);
 	track->name = astrdup(fname);
-
 	track->tag = NULL;
-
 	track->link = LINK_EMPTY;
 	track->link_pl = LINK_EMPTY;
 	track->link_tt = LINK_EMPTY;
@@ -115,7 +114,6 @@ tracks_load(struct tag *tag)
 	FILE *file;
 
 	index_path = aprintf("%s/index", tag->fpath);
-
 	file = fopen(index_path, "r");
 	if (file == NULL) {
 		index_update(tag); /* create index */
@@ -129,6 +127,8 @@ tracks_load(struct tag *tag)
 			linebuf[strlen(linebuf) - 1] = '\0';
 		track_add(tag, linebuf);
 	}
+
+	tag->index_dirty = false;
 
 	fclose(file);
 	free(index_path);
@@ -339,6 +339,8 @@ tracks_update(struct tag *tag)
 		track_add(tag, ent->d_name);
 	}
 
+	tag->index_dirty = false;
+
 	closedir(dir);
 
 	return true;
@@ -362,20 +364,14 @@ playlist_clear(void)
 }
 
 void
-playlist_update(bool exec)
+playlist_update(void)
 {
-	static bool update = false;
 	struct link *link, *link2;
 	struct track *track;
 	struct tag *tag;
 
-	if (!exec) {
-		update = true;
+	if (!playlist_outdated)
 		return;
-	}
-
-	if (!update) return;
-	update = false;
 
 	playlist_clear();
 
@@ -387,6 +383,8 @@ playlist_update(bool exec)
 			list_push_back(&player.playlist, &track->link_pl);
 		}
 	}
+
+	playlist_outdated = false;
 }
 
 struct tag *
@@ -490,7 +488,9 @@ track_add(struct tag *tag, const char *fname)
 
 	/* if track's tag is selected, update playlist */
 	if (link_inuse(&tag->link_sel))
-		playlist_update(false);
+		playlist_outdated = true;
+
+	tag->index_dirty = true;
 
 	return track;
 }
@@ -547,6 +547,8 @@ track_rename(struct track *track, const char *name)
 
 	free(track->name);
 	track->name = astrdup(name);
+
+	track->tag->index_dirty = true;
 
 	return true;
 }
@@ -644,6 +646,8 @@ data_load(void)
 		free(path);
 	}
 
+	playlist_outdated = true;
+
 	closedir(dir);
 }
 
@@ -655,7 +659,8 @@ data_save(void)
 
 	for (LIST_ITER(&tags, link)) {
 		tag = UPCAST(link, struct tag, link);
-		tracks_save(tag);
+		if (tag->index_dirty)
+			tracks_save(tag);
 	}
 
 	release_lock(datadir);

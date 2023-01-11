@@ -3,6 +3,7 @@
 #include "player.h"
 #include "util.h"
 
+#include <err.h>
 #include <stdbool.h>
 
 static void dbus_handle_getall(DBusMessage *msg);

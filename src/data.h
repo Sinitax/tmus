@@ -7,7 +7,7 @@
 struct tag {
 	char *name, *fpath;
 	struct list tracks;
-	bool dirty;
+	bool index_dirty;
 
 	struct link link;     /* tags list */
 	struct link link_sel; /* selected tags list */ 
@@ -39,7 +39,7 @@ bool tracks_update(struct tag *tag);
 struct track *tracks_vis_track(struct link *link);
 
 void playlist_clear(void);
-void playlist_update(bool exec);
+void playlist_update(void);
 
 struct tag *tag_add(const char *fname);
 struct tag *tag_find(const char *name);
@@ -59,7 +59,8 @@ void data_free(void);
 
 extern const char *datadir;
 
-extern struct list tracks; /* struct ref */
-extern struct list tags; /* struct tag */
-extern struct list tags_sel; /* struct ref */
+extern struct list tracks; /* struct track (link) */
+extern struct list tags; /* struct track (link) */
+extern struct list tags_sel; /* struct tag (link_sel) */
 
+extern bool playlist_outdated;
