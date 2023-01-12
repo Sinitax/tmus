@@ -148,6 +148,8 @@ tracks_save(struct tag *tag)
 		fprintf(file, "%s\n", track->name);
 	}
 
+	tag->index_dirty = false;
+
 	fclose(file);
 	free(index_path);
 }
