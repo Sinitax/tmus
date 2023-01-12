@@ -54,13 +54,13 @@ mpd_handle_status(int status)
 	case MPD_ERROR_SERVER:
 	case MPD_ERROR_ARGUMENT:
 		if (!mpd_connection_clear_error(mpd.conn))
-			ERROR("PLAYER: Failed to recover from argument error");
+			ERRORX(SYSTEM, "Player failed to recover");
 	case MPD_ERROR_SYSTEM:
 		errstr = mpd_connection_get_error_message(mpd.conn);
-		PLAYER_STATUS(ERR, "ERR - %s", errstr);
+		PLAYER_STATUS_ERR("ERR - %s", errstr);
 		return false;
 	case MPD_ERROR_CLOSED:
-		ERROR("PLAYER: Connection abruptly closed");
+		ERRORX(SYSTEM, "Player connection abruptly closed");
 	}
 
 	return true;
@@ -128,12 +128,12 @@ player_update(void)
 
 	if (!mpd.conn) {
 		mpd.conn = mpd_connection_new(NULL, 0, 0);
-		if (!mpd.conn) ERROR("MPD: Connection failed\n");
+		if (!mpd.conn) ERRX("MPD connection failed");
 	}
 
 	status = mpd_run_status(mpd.conn);
 	if (!status) {
-		PLAYER_STATUS(ERR, "MPD connection reset: %s",
+		PLAYER_STATUS_ERR("MPD connection reset: %s",
 			mpd_connection_get_error_message(mpd.conn));
 		mpd_connection_free(mpd.conn);
 		mpd.conn = NULL;
@@ -158,7 +158,7 @@ player_update(void)
 	 * get status and track name again.. */
 	status = mpd_run_status(mpd.conn);
 	if (!status) {
-		PLAYER_STATUS(ERR, "MPD connection reset: %s",
+		PLAYER_STATUS_ERR("MPD connection reset: %s",
 			mpd_connection_get_error_message(mpd.conn));
 		mpd_connection_free(mpd.conn);
 		mpd.conn = NULL;
@@ -192,7 +192,7 @@ player_update(void)
 		player.state = PLAYER_STATE_STOPPED;
 		break;
 	default:
-		PANIC();
+		ASSERT(0);
 	}
 
 	player.volume = mpd_status_get_volume(status);
@@ -317,7 +317,7 @@ player_seek(int sec)
 
 	player_clear_status();
 	if (!player.loaded || player.state == PLAYER_STATE_STOPPED) {
-		PLAYER_STATUS(ERR, "No track loaded");
+		PLAYER_STATUS_ERR("No track loaded");
 		return PLAYER_STATUS_ERR;
 	}
 
@@ -338,7 +338,7 @@ player_set_volume(unsigned int vol)
 
 	player_clear_status();
 	if (player.volume == -1) {
-		PLAYER_STATUS(ERR, "Volume control not supported");
+		PLAYER_STATUS_ERR("Volume control not supported");
 		return PLAYER_STATUS_ERR;
 	}
 

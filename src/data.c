@@ -1,15 +1,14 @@
 #include "data.h"
 
+#include "tui.h"
 #include "player.h"
 #include "list.h"
 #include "log.h"
-#include "tui.h"
 
 #include <fts.h>
 #include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <err.h>
 #include <stdbool.h>
 #include <string.h>
 
@@ -21,8 +20,6 @@ struct list tags_sel; /* struct tag (link_sel) */
 
 bool playlist_outdated;
 
-static int get_fid(const char *path);
-
 static struct tag *tag_alloc(const char *path, const char *fname);
 static void tag_free(struct tag *tag);
 
@@ -33,20 +30,13 @@ static int track_name_compare(struct link *a, struct link *b);
 static void tracks_load(struct tag *tag);
 static void tracks_save(struct tag *tag);
 
-int
-get_fid(const char *path)
-{
-	struct stat st;
-	return stat(path, &st) ? -1 : st.st_ino;
-}
-
 struct tag *
 tag_alloc(const char *path, const char *fname)
 {
 	struct tag *tag;
 
 	tag = malloc(sizeof(struct tag));
-	if (!tag) err(1, "malloc");
+	if (!tag) ERROR(SYSTEM, "malloc");
 
 	tag->fpath = aprintf("%s/%s", path, fname);
 	tag->name = astrdup(fname);
@@ -73,7 +63,7 @@ track_alloc(const char *dir, const char *fname)
 	struct track *track;
 
 	track = malloc(sizeof(struct track));
-	if (!track) err(1, "malloc");
+	if (!track) ERROR(SYSTEM, "malloc");
 
 	track->fpath = aprintf("%s/%s", dir, fname);
 	track->name = astrdup(fname);
@@ -118,7 +108,7 @@ tracks_load(struct tag *tag)
 	if (file == NULL) {
 		index_update(tag); /* create index */
 		file = fopen(index_path, "r");
-		if (!file) err(1, "fopen %s", tag->name);
+		if (!file) ERROR(SYSTEM, "fopen %s", tag->name);
 	}
 
 	while (fgets(linebuf, sizeof(linebuf), file)) {
@@ -145,10 +135,9 @@ tracks_save(struct tag *tag)
 	/* write playlist back to index file */
 
 	index_path = aprintf("%s/index", tag->fpath);
-
 	file = fopen(index_path, "w+");
 	if (!file) {
-		fprintf(stderr, "Failed to write to index file: %s\n",
+		WARNX(SYSTEM, "Failed to write to index file: %s",
 			index_path);
 		free(index_path);
 		return;
@@ -284,12 +273,12 @@ index_update(struct tag *tag)
 	DIR *dir;
 
 	dir = opendir(tag->fpath);
-	if (!dir) ERROR("Failed to access dir: %s\n", tag->fpath);
+	if (!dir) ERROR(SYSTEM, "opendir %s", tag->fpath);
 
 	index_path = aprintf("%s/index", tag->fpath);
 
 	file = fopen(index_path, "w+");
-	if (!file) ERROR("Failed to create index file in dir %s\n", tag->name);
+	if (!file) ERROR(SYSTEM, "fopen %s/index", tag->name);
 	free(index_path);
 
 	while ((ent = readdir(dir))) {
@@ -622,13 +611,13 @@ data_load(void)
 	list_init(&tags_sel);
 
 	datadir = getenv("TMUS_DATA");
-	if (!datadir) ERROR("TMUS_DATA not set!\n");
+	if (!datadir) ERRORX(USER, "TMUS_DATA not set");
 
 	if (!acquire_lock(datadir))
-		ERROR("Failed to acquire lock\n");
+		ERRORX(USER, "Data directory in use");
 
 	dir = opendir(datadir);
-	if (!dir) ERROR("Failed to access dir: %s\n", datadir);
+	if (!dir) ERROR(SYSTEM, "opendir %s", datadir);
 
 	while ((ent = readdir(dir))) {
 		if (!strcmp(ent->d_name, "."))
@@ -637,12 +626,10 @@ data_load(void)
 			continue;
 
 		path = aprintf("%s/%s", datadir, ent->d_name);
-
 		if (!stat(path, &st) && S_ISDIR(st.st_mode)) {
 			tag = tag_add(ent->d_name);
 			tracks_load(tag);
 		}
-
 		free(path);
 	}
 

@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #define NCURSES_WIDECHAR 1
 #define _GNU_SOURCE
 
@@ -1290,11 +1291,3 @@ tui_update(void)
 
 	return !quit;
 }
-
-void
-tui_restore(void)
-{
-	if (!isendwin())
-		endwin();
-}
-

@@ -3,7 +3,6 @@
 #include "player.h"
 #include "util.h"
 
-#include <err.h>
 #include <stdbool.h>
 
 static void dbus_handle_getall(DBusMessage *msg);
@@ -98,7 +97,7 @@ dbus_init(void)
 	ret = dbus_bus_request_name(dbus_conn, "org.mpris.MediaPlayer2.tmus",
 		DBUS_NAME_FLAG_REPLACE_EXISTING, &err);
 	if (dbus_error_is_set(&err))
-		errx(1, "mpris register failed");
+		ERRORX(SYSTEM, "mpris register failed");
 
 	log_info("DBus active!\n");
 

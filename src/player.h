@@ -3,8 +3,14 @@
 #include "list.h"
 #include "util.h"
 
+#define PLAYER_STATUS_INFO(...) \
+	PLAYER_STATUS(PLAYER_STATUS_MSG_INFO, __VA_ARGS__)
+
+#define PLAYER_STATUS_ERR(...) \
+	PLAYER_STATUS(PLAYER_STATUS_MSG_ERR, __VA_ARGS__)
+
 #define PLAYER_STATUS(lvl, ...) do { \
-		player.status_lvl = PLAYER_STATUS_MSG_ ## lvl; \
+		player.status_lvl = (lvl); \
 		if (player.status) free(player.status); \
 		player.status = aprintf(__VA_ARGS__); \
 	} while (0)

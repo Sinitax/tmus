@@ -10,11 +10,6 @@
 #include <stdbool.h>
 #include <string.h>
 
-#define CMD_ERROR(...) do { \
-		CMD_SET_STATUS(__VA_ARGS__); \
-		return false; \
-	} while (0)
-
 static const struct cmd *last_cmd;
 static char *last_args;
 
@@ -54,39 +49,52 @@ cmd_move(const char *name)
 	char *newpath;
 
 	tag = tag_find(name);
-	if (!tag) CMD_ERROR("Tag not found");
+	if (!tag) {
+		CMD_SET_STATUS("Tag not found");
+		return false;
+	}
 
 	link = list_at(tracks_vis, track_nav.sel);
-	if (!link) CMD_ERROR("No track selected");
+	if (!link) {
+		CMD_SET_STATUS("No track selected");
+		return false;
+	}
 	track = tracks_vis_track(link);
 
-	if (track->tag == tag)
-		CMD_ERROR("Same tag");
+	if (track->tag == tag) {
+		CMD_SET_STATUS("Same tag");
+		return false;
+	}
 
 	newpath = aprintf("%s/%s", tag->fpath, track->name);
 	if (path_exists(newpath)) {
 		free(newpath);
-		CMD_ERROR("File already exists");
+		CMD_SET_STATUS("File already exists");
+		return false;
 	}
 
 	if (!dup_file(track->fpath, newpath)) {
 		free(newpath);
-		CMD_ERROR("Failed to move track");
+		CMD_SET_STATUS("Failed to move track");
+		return false;
 	}
 
 	free(newpath);
 
 	new = track_add(tag, track->name);
 	if (!new) {
-		rm_file(track->fpath);
-		ERROR("Failed to move track");
+		track_rm(new, true);
+		CMD_SET_STATUS("Failed to move track");
+		return false;
 	}
 
 	if (player.track == track)
 		player.track = new;
 
-	if (!track_rm(track, true))
-		ERROR("Failed to move track");
+	if (!track_rm(track, true)) {
+		CMD_SET_STATUS("Failed to move track");
+		return false;
+	}
 
 	return true;
 }
@@ -100,31 +108,42 @@ cmd_copy(const char *name)
 	char *newpath;
 
 	tag = tag_find(name);
-	if (!tag) CMD_ERROR("Tag not found");
+	if (!tag) {
+		CMD_SET_STATUS("Tag not found");
+		return false;
+	}
 
 	link = list_at(tracks_vis, track_nav.sel);
-	if (!link) CMD_ERROR("No track selected");
+	if (!link) {
+		CMD_SET_STATUS("No track selected");
+		return false;
+	}
 	track = tracks_vis_track(link);
 
-	if (track->tag == tag)
-		CMD_ERROR("Same tag");
+	if (track->tag == tag) {
+		CMD_SET_STATUS("Same tag");
+		return false;
+	}
 
 	newpath = aprintf("%s/%s", tag->fpath, track->name);
 	if (path_exists(newpath)) {
 		free(newpath);
-		CMD_ERROR("File already exists");
+		CMD_SET_STATUS("File already exists");
+		return false;
 	}
 
 	if (!dup_file(track->fpath, newpath)) {
 		free(newpath);
-		CMD_ERROR("Failed to copy track");
+		CMD_SET_STATUS("Failed to copy track");
+		return false;
 	}
 	free(newpath);
 
 	new = track_add(tag, track->name);
 	if (!new) {
 		rm_file(track->fpath);
-		CMD_ERROR("Failed to copy track");
+		CMD_SET_STATUS("Failed to copy track");
+		return false;
 	}
 
 	return true;
@@ -215,21 +234,27 @@ cmd_add_tag(const char *name)
 
 	for (LIST_ITER(&tags, link)) {
 		tag = UPCAST(link, struct tag, link);
-		if (!strcmp(tag->name, name))
-			CMD_ERROR("Tag already exists");
+		if (!strcmp(tag->name, name)) {
+			CMD_SET_STATUS("Tag already exists");
+			return false;
+		}
 	}
 
 	fpath = aprintf("%s/%s", datadir, name);
 
 	if (!make_dir(fpath)) {
 		free(fpath);
-		CMD_ERROR("Failed to create dir");
+		CMD_SET_STATUS("Failed to create dir");
+		return false;
 	}
 
 	free(fpath);
 
 	tag = tag_add(name);
-	if (!tag) CMD_ERROR("Failed to add tag");
+	if (!tag) {
+		CMD_SET_STATUS("Failed to add tag");
+		return false;
+	}
 
 	return true;
 }
@@ -251,12 +276,16 @@ cmd_rm_tag(const char *name)
 				break;
 		}
 
-		if (!LIST_INNER(link))
-			CMD_ERROR("No such tag");
+		if (!LIST_INNER(link)) {
+			CMD_SET_STATUS("No such tag");
+			return false;
+		}
 	}
 
-	if (!tag_rm(tag, true))
-		CMD_ERROR("Failed to remove tag");
+	if (!tag_rm(tag, true)) {
+		CMD_SET_STATUS("Failed to remove tag");
+		return false;
+	}
 
 	return true;
 }
@@ -268,8 +297,10 @@ cmd_rename(const char *name)
 	struct track *track;
 	struct tag *tag;
 
-	if (!*name)
-		CMD_ERROR("Supply a name");
+	if (!*name) {
+		CMD_SET_STATUS("Supply a name");
+		return false;
+	}
 
 	ASSERT(pane_sel == cmd_pane);
 
@@ -331,8 +362,10 @@ cmd_run(const char *query, bool *found)
 bool
 cmd_rerun(void)
 {
-	if (!last_cmd || !last_args)
-		CMD_ERROR("No command to repeat");
+	if (!last_cmd || !last_args) {
+		CMD_SET_STATUS("No command to repeat");
+		return false;
+	}
 	return last_cmd->func(last_args);
 }
 

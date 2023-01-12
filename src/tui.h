@@ -14,9 +14,7 @@
 
 void tui_init(void);
 void tui_deinit(void);
-
 bool tui_update(void);
-void tui_restore(void);
 
 extern struct pane *cmd_pane, *tag_pane, *track_pane;
 extern struct pane *pane_sel, *pane_after_cmd;
@@ -30,3 +28,15 @@ extern struct listnav track_nav;
 extern char *cmd_status;
 extern int cmd_status_uptime;
 
+static inline bool
+tui_enabled(void)
+{
+	return !isendwin();
+}
+
+static inline void
+tui_restore(void)
+{
+	if (!isendwin())
+		endwin();
+}

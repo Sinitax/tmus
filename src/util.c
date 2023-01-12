@@ -1,11 +1,13 @@
+#include <stdio.h>
 #define _XOPEN_SOURCE 600
 #define _GNU_SOURCE
 
-#include "util.h"
 #include "tui.h"
+#include "util.h"
+#include "log.h"
 
 #include <execinfo.h>
-#include <err.h>
+#include <errno.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,15 +20,16 @@ panic(const char *file, int line, const char *msg, ...)
 {
 	va_list ap;
 
-	tui_restore();
+	if (tui_enabled())
+		tui_restore();
 
-	fprintf(stderr, "Panic at %s:%i (", file, line);
 	va_start(ap, msg);
+	fprintf(stderr, "tmus: panic at %s:%i (", file, line);
 	vfprintf(stderr, msg, ap);
-	va_end(ap);
 	fprintf(stderr, ")\n");
+	va_end(ap);
 
-	exit(1);
+	abort();
 }
 
 void
@@ -34,25 +37,60 @@ assert(int cond, const char *file, int line, const char *condstr)
 {
 	if (cond) return;
 
-	tui_restore();
+	if (tui_enabled())
+		tui_restore();
 
-	fprintf(stderr, "Assertion failed %s:%i (%s)\n", file, line, condstr);
+	fprintf(stderr, "tmus: assertion failed %s:%i (%s)\n",
+		file, line, condstr);
 
-	exit(1);
+	abort();
 }
 
 void
-error(const char *fmtstr, ...)
+warn(bool add_error, int type, const char *fmtstr, ...)
 {
 	va_list ap;
 
-	tui_restore();
+	va_start(ap, fmtstr);
+	if (tui_enabled()) {
+		if (type != USER)
+			log_info("tmus: ");
+		log_infov(fmtstr, ap);
+		if (add_error)
+			log_info(": %s", strerror(errno));
+		log_info("\n");
+	} else {
+		if (type != USER)
+			fprintf(stderr, "tmus: ");
+		vfprintf(stderr, fmtstr, ap);
+		if (add_error)
+			fprintf(stderr, ": %s", strerror(errno));
+		fprintf(stderr, "\n");
+	}
+	va_end(ap);
+}
+
+void
+error(bool add_error, int type, const char *fmtstr, ...)
+{
+	va_list ap;
+
+	if (tui_enabled())
+		tui_restore();
 
 	va_start(ap, fmtstr);
+	if (type != USER)
+		fprintf(stderr, "tmus: ");
 	vfprintf(stderr, fmtstr, ap);
+	if (add_error)
+		fprintf(stderr, ": %s", strerror(errno));
+	fprintf(stderr, "\n");
 	va_end(ap);
 
-	exit(1);
+	if (type == INTERNAL)
+		abort();
+	else
+		exit(1);
 }
 
 char *
@@ -61,7 +99,7 @@ astrdup(const char *str)
 	char *alloc;
 
 	alloc = strdup(str);
-	if (!alloc) err(1, "strdup");
+	if (!alloc) ERROR(SYSTEM, "strdup");
 
 	return alloc;
 }
@@ -77,11 +115,11 @@ aprintf(const char *fmtstr, ...)
 
 	va_start(ap, fmtstr);
 	size = vsnprintf(NULL, 0, fmtstr, ap);
-	if (size < 0) err(1, "snprintf");
+	if (size < 0) ERROR(SYSTEM, "snprintf");
 	va_end(ap);
 
 	str = malloc(size + 1);
-	if (!str) err(1, "malloc");
+	if (!str) ERROR(SYSTEM, "malloc");
 
 	va_start(cpy, fmtstr);
 	vsnprintf(str, size + 1, fmtstr, cpy);
@@ -104,7 +142,7 @@ appendstrf(char *alloc, const char *fmtstr, ...)
 
 	prevlen = alloc ? strlen(alloc) : 0;
 	alloc = realloc(alloc, prevlen + size + 1);
-	if (!alloc) return NULL;
+	if (!alloc) ERROR(SYSTEM, "realloc");
 
 	va_start(cpy, fmtstr);
 	vsnprintf(alloc + prevlen, size + 1, fmtstr, cpy);

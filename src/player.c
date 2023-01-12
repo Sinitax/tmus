@@ -73,7 +73,7 @@ player_next_from_playlist(void)
 		if (player.track && link_inuse(&player.track->link_pl)) {
 			index = list_index(&player.playlist,
 				&player.track->link_pl);
-			if (index < 0) PANIC();
+			ASSERT(index >= 0);
 			if (++index == list_len(&player.playlist))
 				return NULL;
 		} else {

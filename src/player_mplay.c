@@ -8,7 +8,6 @@
 #include <sys/wait.h>
 #include <sys/mman.h>
 #include <unistd.h>
-#include <err.h>
 #include <errno.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -57,23 +56,23 @@ mplay_run(struct track *track)
 	ASSERT(!player.loaded);
 
 	if (pipe(input) == -1)
-		err(1, "pipe");
+		ERROR(SYSTEM, "pipe");
 
 	if (pipe(output) == -1)
-		err(1, "pipe");
+		ERROR(SYSTEM, "pipe");
 
 	mplay.pid = fork();
-	if (mplay.pid < 0) err(1, "fork");
+	if (mplay.pid < 0) ERROR(SYSTEM, "fork");
 
 	if (mplay.pid != 0) {
 		close(output[1]);
 		mplay.stdout = fdopen(output[0], "r");
-		if (!mplay.stdout) err(1, "fdopen");
+		if (!mplay.stdout) ERROR(SYSTEM, "fdopen");
 		setvbuf(mplay.stdout, NULL, _IONBF, 0);
 
 		close(input[0]);
 		mplay.stdin = fdopen(input[1], "w");
-		if (!mplay.stdin) err(1, "fdopen");
+		if (!mplay.stdin) ERROR(SYSTEM, "fdopen");
 		setvbuf(mplay.stdin, NULL, _IONBF, 0);
 	} else {
 		close(0);
@@ -93,7 +92,7 @@ mplay_run(struct track *track)
 	line = mplay_readline();
 	if (!line || strcmp(line, "+READY")) {
 		mplay_kill();
-		PLAYER_STATUS(ERR, "Failed to start");
+		PLAYER_STATUS_ERR("Failed to start");
 		return false;
 	}
 
@@ -200,7 +199,7 @@ player_update(void)
 	line = mplay_readline();
 	if (!player.loaded) return;
 	if (!line || strncmp(line, "+STATUS:", 8)) {
-		PLAYER_STATUS(ERR, "Bad response");
+		PLAYER_STATUS_ERR("Bad response");
 		return;
 	}
 
@@ -259,7 +258,7 @@ player_toggle_pause(void)
 	fprintf(mplay.stdin, "pause\n");
 	line = mplay_readline();
 	if (!line || strncmp(line, "+PAUSE:", 7)) {
-		PLAYER_STATUS(ERR, "Bad response");
+		PLAYER_STATUS_ERR("Bad response");
 		return PLAYER_STATUS_ERR;
 	}
 
@@ -308,7 +307,7 @@ player_seek(int sec)
 	fprintf(mplay.stdin, "seek %i\n", sec);
 	line = mplay_readline();
 	if (!line || strncmp(line, "+SEEK:", 6)) {
-		PLAYER_STATUS(ERR, "Bad response");
+		PLAYER_STATUS_ERR("Bad response");
 		return PLAYER_STATUS_ERR;
 	}
 
@@ -326,14 +325,14 @@ player_set_volume(unsigned int vol)
 	player_clear_status();
 
 	if (player.volume == -1) {
-		PLAYER_STATUS(ERR, "Volume control not supported");
+		PLAYER_STATUS_ERR("Volume control not supported");
 		return PLAYER_STATUS_ERR;
 	}
 
 	fprintf(mplay.stdin, "vol %i\n", vol);
 	line = mplay_readline();
 	if (!line || strncmp(line, "+VOLUME:", 8)) {
-		PLAYER_STATUS(ERR, "Bad response");
+		PLAYER_STATUS_ERR("Bad response");
 		return PLAYER_STATUS_ERR;
 	}
 
