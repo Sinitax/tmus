@@ -196,6 +196,7 @@ cmd_reindex(const char *name)
 	if (player.track) {
 		playing_tag = player.track->tag;
 		playing_name = astrdup(player.track->name);
+		player.track = NULL;
 	}
 
 	/* update each tag specified */

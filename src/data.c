@@ -330,7 +330,7 @@ tracks_update(struct tag *tag)
 		track_add(tag, ent->d_name);
 	}
 
-	tag->index_dirty = false;
+	tag->index_dirty = true;
 
 	closedir(dir);
 
@@ -491,6 +491,8 @@ track_rm(struct track *track, bool sync_fs)
 {
 	if (sync_fs && !rm_file(track->fpath))
 		return false;
+
+	track->tag->index_dirty = true;
 
 	/* remove from tracks list */
 	link_pop(&track->link);
