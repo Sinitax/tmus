@@ -7,11 +7,15 @@
 #include "tui.h"
 #include "util.h"
 
+#include <asm-generic/errno-base.h>
+#include <errno.h>
 #include <stdbool.h>
 #include <string.h>
 
 static const struct cmd *last_cmd;
 static char *last_args;
+
+static void cmd_status_from_errno(int err);
 
 static bool cmd_save(const char *args);
 static bool cmd_move(const char *args);
@@ -33,6 +37,17 @@ const struct cmd commands[] = {
 
 const size_t command_count = ARRLEN(commands);
 
+void
+cmd_status_from_errno(int err)
+{
+	if (err == EACCES || err == EPERM)
+		CMD_SET_STATUS("Missing permissions");
+	else if (err == EEXIST)
+		CMD_SET_STATUS("Path already exists");
+	else
+		CMD_SET_STATUS("Unknown error");
+}
+
 bool
 cmd_save(const char *args)
 {
@@ -44,9 +59,8 @@ bool
 cmd_move(const char *name)
 {
 	struct link *link;
-	struct track *track, *new;
+	struct track *track;
 	struct tag *tag;
-	char *newpath;
 
 	tag = tag_find(name);
 	if (!tag) {
@@ -66,33 +80,8 @@ cmd_move(const char *name)
 		return false;
 	}
 
-	newpath = aprintf("%s/%s", tag->fpath, track->name);
-	if (path_exists(newpath)) {
-		free(newpath);
-		CMD_SET_STATUS("File already exists");
-		return false;
-	}
-
-	if (!dup_file(track->fpath, newpath)) {
-		free(newpath);
-		CMD_SET_STATUS("Failed to move track");
-		return false;
-	}
-
-	free(newpath);
-
-	new = track_add(tag, track->name);
-	if (!new) {
-		track_rm(new, true);
-		CMD_SET_STATUS("Failed to move track");
-		return false;
-	}
-
-	if (player.track == track)
-		player.track = new;
-
-	if (!track_rm(track, true)) {
-		CMD_SET_STATUS("Failed to move track");
+	if (!track_move(track, tag)) {
+		cmd_status_from_errno(errno);
 		return false;
 	}
 
@@ -229,31 +218,17 @@ cleanup:
 bool
 cmd_add_tag(const char *name)
 {
-	struct link *link;
 	struct tag *tag;
-	char *fpath;
 
-	for (LIST_ITER(&tags, link)) {
-		tag = UPCAST(link, struct tag, link);
-		if (!strcmp(tag->name, name)) {
-			CMD_SET_STATUS("Tag already exists");
-			return false;
-		}
-	}
-
-	fpath = aprintf("%s/%s", datadir, name);
-
-	if (!make_dir(fpath)) {
-		free(fpath);
-		CMD_SET_STATUS("Failed to create dir");
+	tag = tag_find(name);
+	if (tag) {
+		CMD_SET_STATUS("Tag already exists");
 		return false;
 	}
 
-	free(fpath);
-
-	tag = tag_add(name);
+	tag = tag_create(name);
 	if (!tag) {
-		CMD_SET_STATUS("Failed to add tag");
+		CMD_SET_STATUS("Failed to create tag");
 		return false;
 	}
 
@@ -271,13 +246,8 @@ cmd_rm_tag(const char *name)
 		if (!link) return false;
 		tag = UPCAST(link, struct tag, link);
 	} else  {
-		for (LIST_ITER(&tags, link)) {
-			tag = UPCAST(link, struct tag, link);
-			if (!strcmp(tag->name, name))
-				break;
-		}
-
-		if (!LIST_INNER(link)) {
+		tag = tag_find(name);
+		if (!tag) {
 			CMD_SET_STATUS("No such tag");
 			return false;
 		}

@@ -41,6 +41,7 @@ struct track *tracks_vis_track(struct link *link);
 void playlist_clear(void);
 void playlist_update(void);
 
+struct tag *tag_create(const char *fname);
 struct tag *tag_add(const char *fname);
 struct tag *tag_find(const char *name);
 bool tag_rm(struct tag *tag, bool sync_fs);
@@ -49,6 +50,7 @@ bool tag_rename(struct tag *tag, const char *name);
 struct track *track_add(struct tag *tag, const char *fname);
 bool track_rm(struct track *track, bool sync_fs);
 bool track_rename(struct track *track, const char *name);
+bool track_move(struct track *track, struct tag *tag);
 
 bool acquire_lock(const char *path);
 bool release_lock(const char *path);
@@ -62,5 +64,7 @@ extern const char *datadir;
 extern struct list tracks; /* struct track (link) */
 extern struct list tags; /* struct track (link) */
 extern struct list tags_sel; /* struct tag (link_sel) */
+
+extern struct tag *trash_tag;
 
 extern bool playlist_outdated;

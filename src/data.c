@@ -6,6 +6,7 @@
 #include "log.h"
 
 #include <fts.h>
+#include <errno.h>
 #include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -18,6 +19,8 @@ struct list tracks; /* struct track (link) */
 struct list tags; /* struct track (link) */
 struct list tags_sel; /* struct tag (link_sel) */
 
+struct tag *trash_tag;
+
 bool playlist_outdated;
 
 static struct tag *tag_alloc(const char *path, const char *fname);
@@ -25,7 +28,6 @@ static void tag_free(struct tag *tag);
 
 static struct track *track_alloc(const char *path, const char *fname);
 static void track_free(struct track *t);
-static int track_name_compare(struct link *a, struct link *b);
 
 static void tracks_load(struct tag *tag);
 static void tracks_save(struct tag *tag);
@@ -83,17 +85,6 @@ track_free(struct track *t)
 	free(t->fpath);
 	free(t->name);
 	free(t);
-}
-
-int
-track_name_compare(struct link *a, struct link *b)
-{
-	struct track *ta, *tb;
-
-	ta = UPCAST(a, struct track, link);
-	tb = UPCAST(b, struct track, link);
-
-	return strcmp(ta->name, tb->name);
 }
 
 void
@@ -379,12 +370,34 @@ playlist_update(void)
 }
 
 struct tag *
+tag_create(const char *fname)
+{
+	struct tag *tag;
+	char *path;
+
+	path = aprintf("%s/%s", datadir, fname);
+	if (!make_dir(path)) {
+		free(path);
+		return NULL;
+	}
+	free(path);
+
+	tag = tag_add(fname);
+	if (!tag) {
+		rm_dir(path, false);
+		return NULL;
+	}
+
+	return tag;
+}
+
+struct tag *
 tag_add(const char *fname)
 {
 	struct tag *tag;
 
-	/* add to tags list */
 	tag = tag_alloc(datadir, fname);
+	if (!tag) return NULL;
 	list_push_back(&tags, &tag->link);
 
 	return tag;
@@ -547,6 +560,39 @@ track_rename(struct track *track, const char *name)
 }
 
 bool
+track_move(struct track *track, struct tag *tag)
+{
+	struct track *new;
+	char *newpath;
+
+	newpath = aprintf("%s/%s", tag->fpath, track->name);
+	if (path_exists(newpath)) {
+		free(newpath);
+		return false;
+	}
+
+	if (!dup_file(track->fpath, newpath)) {
+		free(newpath);
+		return false;
+	}
+
+	free(newpath);
+
+	new = track_add(tag, track->name);
+	if (!new) return false;
+
+	if (player.track == track)
+		player.track = new;
+
+	if (!track_rm(track, true)) {
+		track_rm(new, true);
+		return false;
+	}
+
+	return true;
+}
+
+bool
 acquire_lock(const char *datadir)
 {
 	char *lockpath, *procpath;
@@ -623,6 +669,7 @@ data_load(void)
 	dir = opendir(datadir);
 	if (!dir) ERROR(SYSTEM, "opendir %s", datadir);
 
+	trash_tag = NULL;
 	while ((ent = readdir(dir))) {
 		if (!strcmp(ent->d_name, "."))
 			continue;
@@ -632,6 +679,8 @@ data_load(void)
 		path = aprintf("%s/%s", datadir, ent->d_name);
 		if (!stat(path, &st) && S_ISDIR(st.st_mode)) {
 			tag = tag_add(ent->d_name);
+			if (!strcmp(tag->name, "trash"))
+				trash_tag = tag;
 			tracks_load(tag);
 		}
 		free(path);

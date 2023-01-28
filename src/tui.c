@@ -551,8 +551,14 @@ delete_selected_track(void)
 	if (!link) return false;
 
 	track = tracks_vis_track(link);
-	if (!track_rm(track, true))
-		CMD_SET_STATUS("Failed to remove track");
+
+	if (!trash_tag || !strcmp(track->tag->name, "trash")) {
+		if (!track_rm(track, true))
+			CMD_SET_STATUS("Failed to remove track");
+	} else {
+		if (!track_move(track, trash_tag))
+			CMD_SET_STATUS("Failed to trash track");
+	}
 
 	return true;
 }
