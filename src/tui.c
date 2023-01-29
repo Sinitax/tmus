@@ -1111,6 +1111,10 @@ main_input(wint_t c)
 	case L'-':
 		player_set_volume(MAX(0, player.volume - 5));
 		break;
+	case KEY_CTRL('l'):
+		clear();
+		refresh();
+		break;
 	case L'q':
 		quit = 1;
 		break;

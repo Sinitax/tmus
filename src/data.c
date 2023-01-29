@@ -5,6 +5,7 @@
 #include "list.h"
 #include "log.h"
 
+#include <asm-generic/errno-base.h>
 #include <fts.h>
 #include <errno.h>
 #include <dirent.h>
@@ -568,11 +569,13 @@ track_move(struct track *track, struct tag *tag)
 	newpath = aprintf("%s/%s", tag->fpath, track->name);
 	if (path_exists(newpath)) {
 		free(newpath);
+		errno = EEXIST;
 		return false;
 	}
 
 	if (!dup_file(track->fpath, newpath)) {
 		free(newpath);
+		errno = EACCES;
 		return false;
 	}
 
@@ -586,6 +589,7 @@ track_move(struct track *track, struct tag *tag)
 
 	if (!track_rm(track, true)) {
 		track_rm(new, true);
+		errno = EACCES;
 		return false;
 	}
 
