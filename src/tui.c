@@ -1,4 +1,3 @@
-#include <stdbool.h>
 #define NCURSES_WIDECHAR 1
 #define _GNU_SOURCE
 
@@ -41,6 +40,7 @@ enum {
 typedef char *(*completion_gen)(const char *text, int fwd, int state);
 
 static void pane_title(struct pane *pane, bool highlight, const char *fmtstr, ...);
+static bool confirm_popup(const char *prompt);
 
 static char *command_name_gen(const char *text, int fwd, int state);
 static char *track_vis_name_gen(const char *text, int fwd, int state);
@@ -51,7 +51,7 @@ static bool rename_current_tag(void);
 static bool toggle_current_tag(void);
 static void select_only_current_tag(void);
 static void seek_next_selected_tag(void);
-static void delete_selected_tag(void);
+static void delete_current_tag(void);
 
 static bool tag_pane_input(wint_t c);
 static void tag_pane_vis(struct pane *pane, int sel);
@@ -60,7 +60,7 @@ static bool play_selected_track(void);
 static bool seek_track_tag(struct track *target);
 static bool seek_track(struct track *target);
 static bool rename_current_track(void);
-static bool delete_selected_track(void);
+static bool delete_current_track(void);
 
 static bool track_pane_input(wint_t c);
 static void track_pane_vis(struct pane *pane, int sel);
@@ -148,6 +148,36 @@ pane_title(struct pane *pane, bool highlight, const char *fmtstr, ...)
 
 	if (highlight) ATTR_OFF(pane->win, A_STANDOUT);
 	style_off(pane->win, STYLE_TITLE);
+}
+
+bool
+confirm_popup(const char *prompt)
+{
+	WINDOW *win;
+	int maxx, maxy;
+	int sx, sy, w, h;
+	int tx, ty;
+	unsigned int c;
+
+	getmaxyx(stdscr, maxy, maxx);
+
+	w = 30;
+	h = 5;
+	sx = (maxx - w) / 2;
+	sy = (maxy - h) / 2;
+	win = newwin(h, w, sy, sx);
+
+	tx = (w - strlen(prompt)) / 2;
+	ty = h / 2;
+	wborder(win, 0, 0, 0, 0, 0, 0, 0, 0);
+	mvwprintw(win, ty, tx, "%s", prompt);
+	wrefresh(win);
+
+	while ((c = wgetch(win)) && c >= 128);
+
+	delwin(win);
+
+	return c == 'y';
 }
 
 char *
@@ -325,6 +355,8 @@ toggle_current_tag(void)
 		list_push_back(&tags_sel, &tag->link_sel);
 	}
 
+	playlist_outdated = true;
+
 	return true;
 }
 
@@ -332,7 +364,6 @@ void
 select_only_current_tag(void)
 {
 	list_clear(&tags_sel);
-
 	toggle_current_tag();
 }
 
@@ -368,14 +399,19 @@ seek_next_selected_tag(void)
 }
 
 void
-delete_selected_tag(void)
+delete_current_tag(void)
 {
 	struct link *link;
 	struct tag *tag;
 
+	if (!confirm_popup("Delete tag?"))
+		return;
+
 	link = list_at(&tags, tag_nav.sel);
 	if (!link) return;
 	tag = UPCAST(link, struct tag, link);
+	if (link_inuse(&tag->link_sel))
+		playlist_outdated = true;
 	tag_rm(tag, true);
 }
 
@@ -391,11 +427,9 @@ tag_pane_input(wint_t c)
 		break;
 	case KEY_SPACE: /* toggle tag */
 		toggle_current_tag();
-		playlist_outdated = true;
 		break;
 	case KEY_ENTER: /* select only current tag */
 		select_only_current_tag();
-		playlist_outdated = true;
 		break;
 	case KEY_PPAGE: /* seek half a page up */
 		listnav_update_sel(&tag_nav, tag_nav.sel - tag_nav.wlen / 2);
@@ -416,8 +450,7 @@ tag_pane_input(wint_t c)
 		seek_next_selected_tag();
 		break;
 	case L'D': /* delete tag */
-		delete_selected_tag();
-		playlist_outdated = true;
+		delete_current_tag();
 		break;
 	default:
 		return false;
@@ -542,7 +575,7 @@ rename_current_track(void)
 }
 
 bool
-delete_selected_track(void)
+delete_current_track(void)
 {
 	struct link *link;
 	struct track *track;
@@ -597,7 +630,7 @@ track_pane_input(wint_t c)
 		seek_track(player.track);
 		break;
 	case L'D': /* delete track */
-		delete_selected_track();
+		delete_current_track();
 		break;
 	default:
 		return false;
