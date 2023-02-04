@@ -41,11 +41,11 @@ void
 cmd_status_from_errno(int err)
 {
 	if (err == EACCES || err == EPERM)
-		CMD_SET_STATUS("Missing permissions");
+		USER_STATUS("Missing permissions");
 	else if (err == EEXIST)
-		CMD_SET_STATUS("Path already exists");
+		USER_STATUS("Path already exists");
 	else
-		CMD_SET_STATUS("Unknown error");
+		USER_STATUS("Unknown error");
 }
 
 bool
@@ -64,19 +64,19 @@ cmd_move(const char *name)
 
 	tag = tag_find(name);
 	if (!tag) {
-		CMD_SET_STATUS("Tag not found");
+		USER_STATUS("Tag not found");
 		return false;
 	}
 
 	link = list_at(tracks_vis, track_nav.sel);
 	if (!link) {
-		CMD_SET_STATUS("No track selected");
+		USER_STATUS("No track selected");
 		return false;
 	}
 	track = tracks_vis_track(link);
 
 	if (track->tag == tag) {
-		CMD_SET_STATUS("Same tag");
+		USER_STATUS("Same tag");
 		return false;
 	}
 
@@ -98,32 +98,32 @@ cmd_copy(const char *name)
 
 	tag = tag_find(name);
 	if (!tag) {
-		CMD_SET_STATUS("Tag not found");
+		USER_STATUS("Tag not found");
 		return false;
 	}
 
 	link = list_at(tracks_vis, track_nav.sel);
 	if (!link) {
-		CMD_SET_STATUS("No track selected");
+		USER_STATUS("No track selected");
 		return false;
 	}
 	track = tracks_vis_track(link);
 
 	if (track->tag == tag) {
-		CMD_SET_STATUS("Same tag");
+		USER_STATUS("Same tag");
 		return false;
 	}
 
 	newpath = aprintf("%s/%s", tag->fpath, track->name);
 	if (path_exists(newpath)) {
 		free(newpath);
-		CMD_SET_STATUS("File already exists");
+		USER_STATUS("File already exists");
 		return false;
 	}
 
 	if (!dup_file(track->fpath, newpath)) {
 		free(newpath);
-		CMD_SET_STATUS("Failed to copy track");
+		USER_STATUS("Failed to copy track");
 		return false;
 	}
 	free(newpath);
@@ -131,7 +131,7 @@ cmd_copy(const char *name)
 	new = track_add(tag, track->name);
 	if (!new) {
 		rm_file(track->fpath);
-		CMD_SET_STATUS("Failed to copy track");
+		USER_STATUS("Failed to copy track");
 		return false;
 	}
 
@@ -222,13 +222,13 @@ cmd_add_tag(const char *name)
 
 	tag = tag_find(name);
 	if (tag) {
-		CMD_SET_STATUS("Tag already exists");
+		USER_STATUS("Tag already exists");
 		return false;
 	}
 
 	tag = tag_create(name);
 	if (!tag) {
-		CMD_SET_STATUS("Failed to create tag");
+		USER_STATUS("Failed to create tag");
 		return false;
 	}
 
@@ -248,13 +248,13 @@ cmd_rm_tag(const char *name)
 	} else  {
 		tag = tag_find(name);
 		if (!tag) {
-			CMD_SET_STATUS("No such tag");
+			USER_STATUS("No such tag");
 			return false;
 		}
 	}
 
 	if (!tag_rm(tag, true)) {
-		CMD_SET_STATUS("Failed to remove tag");
+		USER_STATUS("Failed to remove tag");
 		return false;
 	}
 
@@ -269,7 +269,7 @@ cmd_rename(const char *name)
 	struct tag *tag;
 
 	if (!*name) {
-		CMD_SET_STATUS("Supply a name");
+		USER_STATUS("Supply a name");
 		return false;
 	}
 
@@ -334,7 +334,7 @@ bool
 cmd_rerun(void)
 {
 	if (!last_cmd || !last_args) {
-		CMD_SET_STATUS("No command to repeat");
+		USER_STATUS("No command to repeat");
 		return false;
 	}
 	return last_cmd->func(last_args);

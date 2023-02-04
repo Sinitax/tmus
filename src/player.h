@@ -3,21 +3,15 @@
 #include "list.h"
 #include "util.h"
 
-#define PLAYER_STATUS_INFO(...) \
-	PLAYER_STATUS(PLAYER_STATUS_MSG_INFO, __VA_ARGS__)
-
-#define PLAYER_STATUS_ERR(...) \
-	PLAYER_STATUS(PLAYER_STATUS_MSG_ERR, __VA_ARGS__)
-
-#define PLAYER_STATUS(lvl, ...) do { \
-		player.status_lvl = (lvl); \
-		if (player.status) free(player.status); \
-		player.status = aprintf(__VA_ARGS__); \
+#define PLAYER_STATUS(...) do { \
+		free(user_status); \
+		user_status = aprintf("Player: " __VA_ARGS__); \
+		user_status_uptime = 20; \
 	} while (0)
 
 enum {
-	PLAYER_STATUS_OK,
-	PLAYER_STATUS_ERR
+	PLAYER_OK,
+	PLAYER_ERR
 };
 
 enum {

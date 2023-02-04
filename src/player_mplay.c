@@ -1,5 +1,6 @@
 #include "player.h"
 
+#include "tui.h"
 #include "data.h"
 #include "list.h"
 #include "util.h"
@@ -15,6 +16,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define MPLAY_STATUS(line) do { \
+		free(user_status); \
+		user_status = aprintf("Player: %s", \
+			line ? line : "no response"); \
+		user_status_uptime = 20; \
+	} while (0)
+
 struct mplay_player {
 	FILE *stdin;
 	FILE *stdout;
@@ -26,23 +34,14 @@ struct mplay_player mplay;
 
 static void sigpipe_handler(int sig);
 
-static bool mplay_alive(void);
 static void mplay_kill(void);
 static bool mplay_run(struct track *track);
 static char *mplay_readline(void);
-
-static void player_clear_status(void);
 
 void
 sigpipe_handler(int sig)
 {
 	mplay_kill();
-}
-
-bool
-mplay_alive(void)
-{
-	return player.loaded && !kill(mplay.pid, 0);
 }
 
 bool
@@ -77,8 +76,10 @@ mplay_run(struct track *track)
 	} else {
 		close(0);
 		close(1);
+		close(2);
 		dup2(input[0], 0);
 		dup2(output[1], 1);
+		dup2(output[1], 2);
 		close(output[0]);
 		close(output[1]);
 		path = aprintf("%s/%s/%s", datadir,
@@ -92,7 +93,7 @@ mplay_run(struct track *track)
 	line = mplay_readline();
 	if (!line || strcmp(line, "+READY")) {
 		mplay_kill();
-		PLAYER_STATUS_ERR("Failed to start");
+		MPLAY_STATUS(line);
 		return false;
 	}
 
@@ -129,14 +130,6 @@ mplay_readline(void)
 }
 
 void
-player_clear_status(void)
-{
-	free(player.status);
-	player.status = NULL;
-	player.status_lvl = PLAYER_STATUS_MSG_NONE;
-}
-
-void
 player_init(void)
 {
 	list_init(&player.playlist);
@@ -156,9 +149,6 @@ player_init(void)
 	player.time_pos = 0;
 	player.time_end = 0;
 
-	player.status = NULL;
-	player.status_lvl = PLAYER_STATUS_MSG_INFO;
-
 	signal(SIGPIPE, sigpipe_handler);
 }
 
@@ -169,7 +159,6 @@ player_deinit(void)
 	list_clear(&player.queue);
 	list_clear(&player.history);
 
-	free(player.status);
 	free(player.track_name);
 
 	mplay_kill();
@@ -181,12 +170,10 @@ player_update(void)
 	bool queue_empty;
 	char *tok, *line;
 
-	player_clear_status();
-
 	if (!player.loaded) {
 		queue_empty = list_empty(&player.queue);
 		if (player.track && player.autoplay || !queue_empty) {
-			if (player_next() != PLAYER_STATUS_OK)
+			if (player_next() != PLAYER_OK)
 				player_clear_track();
 		} else if (player.track) {
 			player_clear_track();
@@ -199,7 +186,7 @@ player_update(void)
 	line = mplay_readline();
 	if (!player.loaded) return;
 	if (!line || strncmp(line, "+STATUS:", 8)) {
-		PLAYER_STATUS_ERR("Bad response");
+		MPLAY_STATUS(line);
 		return;
 	}
 
@@ -226,7 +213,7 @@ player_play_track(struct track *track, bool new)
 	player_clear_track();
 
 	if (!mplay_run(track))
-		return PLAYER_STATUS_ERR;
+		return PLAYER_ERR;
 
 	/* new invocations are removed from history */
 	if (new) link_pop(&track->link_hs);
@@ -235,7 +222,7 @@ player_play_track(struct track *track, bool new)
 	player.time_pos = 0;
 	player.time_end = 0;
 
-	return PLAYER_STATUS_OK;
+	return PLAYER_OK;
 }
 
 int
@@ -247,7 +234,7 @@ player_clear_track(void)
 	player.track = NULL;
 	mplay_kill();
 
-	return PLAYER_STATUS_OK;
+	return PLAYER_OK;
 }
 
 int
@@ -258,11 +245,11 @@ player_toggle_pause(void)
 	fprintf(mplay.stdin, "pause\n");
 	line = mplay_readline();
 	if (!line || strncmp(line, "+PAUSE:", 7)) {
-		PLAYER_STATUS_ERR("Bad response");
-		return PLAYER_STATUS_ERR;
+		MPLAY_STATUS(line);
+		return PLAYER_ERR;
 	}
 
-	return PLAYER_STATUS_OK;
+	return PLAYER_OK;
 }
 
 int
@@ -271,7 +258,7 @@ player_pause(void)
 	if (player.state != PLAYER_STATE_PAUSED)
 		player_toggle_pause();
 
-	return PLAYER_STATUS_OK;
+	return PLAYER_OK;
 }
 
 int
@@ -280,13 +267,13 @@ player_resume(void)
 	if (player.state != PLAYER_STATE_PLAYING)
 		player_toggle_pause();
 
-	return PLAYER_STATUS_OK;
+	return PLAYER_OK;
 }
 
 int
 player_play(void)
 {
-	return PLAYER_STATUS_OK;
+	return PLAYER_OK;
 }
 
 int
@@ -294,7 +281,7 @@ player_stop(void)
 {
 	player_clear_track();
 
-	return PLAYER_STATUS_OK;
+	return PLAYER_OK;
 }
 
 int
@@ -302,19 +289,17 @@ player_seek(int sec)
 {
 	char *line;
 
-	player_clear_status();
-
 	fprintf(mplay.stdin, "seek %i\n", sec);
 	line = mplay_readline();
 	if (!line || strncmp(line, "+SEEK:", 6)) {
-		PLAYER_STATUS_ERR("Bad response");
-		return PLAYER_STATUS_ERR;
+		MPLAY_STATUS(line);
+		return PLAYER_ERR;
 	}
 
 	player.time_pos = atoi(line + 7);
 	player.time_end = MAX(player.time_pos, player.time_end);
 
-	return PLAYER_STATUS_OK;
+	return PLAYER_OK;
 }
 
 int
@@ -322,22 +307,20 @@ player_set_volume(unsigned int vol)
 {
 	char *line;
 
-	player_clear_status();
-
 	if (player.volume == -1) {
-		PLAYER_STATUS_ERR("Volume control not supported");
-		return PLAYER_STATUS_ERR;
+		PLAYER_STATUS("volume control not supported");
+		return PLAYER_ERR;
 	}
 
 	fprintf(mplay.stdin, "vol %i\n", vol);
 	line = mplay_readline();
 	if (!line || strncmp(line, "+VOLUME:", 8)) {
-		PLAYER_STATUS_ERR("Bad response");
-		return PLAYER_STATUS_ERR;
+		MPLAY_STATUS(line);
+		return PLAYER_ERR;
 	}
 
 	player.volume = atoi(line + 9);
 
-	return PLAYER_STATUS_OK;
+	return PLAYER_OK;
 }
 

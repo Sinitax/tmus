@@ -120,20 +120,20 @@ player_prev(void)
 	struct track *track;
 
 	if (list_empty(&player.history))
-		return PLAYER_STATUS_ERR;
+		return PLAYER_ERR;
 
 	if (!player.track || !link_inuse(&player.track->link_hs)) {
 		next = list_back(&player.history);
 	} else if (LIST_INNER(player.track->link_hs.prev)) {
 		next = player.track->link_hs.prev;
 	} else {
-		return PLAYER_STATUS_ERR;
+		return PLAYER_ERR;
 	}
 
 	track = UPCAST(next, struct track, link_hs);
 	player_play_track(track, false);
 
-	return PLAYER_STATUS_OK;
+	return PLAYER_OK;
 }
 
 int
@@ -159,11 +159,11 @@ player_next(void)
 	}
 
 	player_play_track(next_track, new_entry);
-	return PLAYER_STATUS_OK;
+	return PLAYER_OK;
 
 clear:
 	player_clear_track();
-	return PLAYER_STATUS_ERR;
+	return PLAYER_ERR;
 }
 
 /* implemented by backend:

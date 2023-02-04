@@ -6,10 +6,10 @@
 
 #include <stdbool.h>
 
-#define CMD_SET_STATUS(...) do { \
-		free(cmd_status); \
-		cmd_status_uptime = 10; \
-		cmd_status = aprintf(__VA_ARGS__); \
+#define USER_STATUS(...) do { \
+		free(user_status); \
+		user_status = aprintf(__VA_ARGS__); \
+		user_status_uptime = 10; \
 	} while (0)
 
 void tui_init(void);
@@ -25,8 +25,8 @@ extern int track_show_playlist;
 extern struct listnav tag_nav;
 extern struct listnav track_nav;
 
-extern char *cmd_status;
-extern int cmd_status_uptime;
+extern char *user_status;
+extern int user_status_uptime;
 
 static inline bool
 tui_enabled(void)

@@ -30,25 +30,13 @@ struct mpd_player {
 struct player player;
 struct mpd_player mpd;
 
-static void player_clear_status(void);
-
 static bool mpd_handle_status(int status);
 static char *mpd_loaded_track_name(struct mpd_song *song);
-
-void
-player_clear_status(void)
-{
-	free(player.status);
-	player.status = NULL;
-	player.status_lvl = PLAYER_STATUS_MSG_NONE;
-}
 
 bool
 mpd_handle_status(int status)
 {
 	const char *errstr;
-
-	player_clear_status();
 
 	switch (status) {
 	case MPD_ERROR_SERVER:
@@ -57,7 +45,7 @@ mpd_handle_status(int status)
 			ERRORX(SYSTEM, "Player failed to recover");
 	case MPD_ERROR_SYSTEM:
 		errstr = mpd_connection_get_error_message(mpd.conn);
-		PLAYER_STATUS_ERR("ERR - %s", errstr);
+		PLAYER_STATUS("MPD ERR - %s", errstr);
 		return false;
 	case MPD_ERROR_CLOSED:
 		ERRORX(SYSTEM, "Player connection abruptly closed");
@@ -101,9 +89,6 @@ player_init(void)
 
 	player.time_pos = 0;
 	player.time_end = 0;
-
-	player.status = NULL;
-	player.status_lvl = PLAYER_STATUS_MSG_INFO;
 }
 
 void
@@ -133,7 +118,7 @@ player_update(void)
 
 	status = mpd_run_status(mpd.conn);
 	if (!status) {
-		PLAYER_STATUS_ERR("MPD connection reset: %s",
+		PLAYER_STATUS("MPD connection reset: %s",
 			mpd_connection_get_error_message(mpd.conn));
 		mpd_connection_free(mpd.conn);
 		mpd.conn = NULL;
@@ -158,7 +143,7 @@ player_update(void)
 	 * get status and track name again.. */
 	status = mpd_run_status(mpd.conn);
 	if (!status) {
-		PLAYER_STATUS_ERR("MPD connection reset: %s",
+		PLAYER_STATUS("MPD connection reset: %s",
 			mpd_connection_get_error_message(mpd.conn));
 		mpd_connection_free(mpd.conn);
 		mpd.conn = NULL;
@@ -214,15 +199,15 @@ player_play_track(struct track *track, bool new)
 
 	status = mpd_run_clear(mpd.conn);
 	if (!mpd_handle_status(status))
-		return PLAYER_STATUS_ERR;
+		return PLAYER_ERR;
 
 	status = mpd_run_add(mpd.conn, track->fpath);
 	if (!mpd_handle_status(status))
-		return PLAYER_STATUS_ERR;
+		return PLAYER_ERR;
 
 	status = mpd_run_play(mpd.conn);
 	if (!mpd_handle_status(status))
-		return PLAYER_STATUS_ERR;
+		return PLAYER_ERR;
 
 	/* add last track to history */
 	if (player.track && !link_inuse(&player.track->link_hs))
@@ -233,7 +218,7 @@ player_play_track(struct track *track, bool new)
 
 	player.track = track;
 
-	return PLAYER_STATUS_OK;
+	return PLAYER_OK;
 }
 
 int
@@ -245,9 +230,9 @@ player_clear_track(void)
 	status = mpd_run_clear(mpd.conn);
 
 	if (!mpd_handle_status(status))
-		return PLAYER_STATUS_ERR;
+		return PLAYER_ERR;
 
-	return PLAYER_STATUS_OK;
+	return PLAYER_OK;
 }
 
 int
@@ -257,9 +242,9 @@ player_toggle_pause(void)
 
 	status = mpd_run_toggle_pause(mpd.conn);
 	if (!mpd_handle_status(status))
-		return PLAYER_STATUS_ERR;
+		return PLAYER_ERR;
 
-	return PLAYER_STATUS_OK;
+	return PLAYER_OK;
 }
 
 int
@@ -269,9 +254,9 @@ player_pause(void)
 
 	status = mpd_run_pause(mpd.conn, true);
 	if (!mpd_handle_status(status))
-		return PLAYER_STATUS_ERR;
+		return PLAYER_ERR;
 
-	return PLAYER_STATUS_OK;
+	return PLAYER_OK;
 }
 
 int
@@ -281,9 +266,9 @@ player_resume(void)
 
 	status = mpd_run_pause(mpd.conn, false);
 	if (!mpd_handle_status(status))
-		return PLAYER_STATUS_ERR;
+		return PLAYER_ERR;
 
-	return PLAYER_STATUS_OK;
+	return PLAYER_OK;
 }
 
 int
@@ -293,9 +278,9 @@ player_play(void)
 
 	status = mpd_run_play(mpd.conn);
 	if (!mpd_handle_status(status))
-		return PLAYER_STATUS_ERR;
+		return PLAYER_ERR;
 
-	return PLAYER_STATUS_OK;
+	return PLAYER_OK;
 }
 
 int
@@ -305,9 +290,9 @@ player_stop(void)
 
 	status = mpd_run_stop(mpd.conn);
 	if (!mpd_handle_status(status))
-		return PLAYER_STATUS_ERR;
+		return PLAYER_ERR;
 
-	return PLAYER_STATUS_OK;
+	return PLAYER_OK;
 }
 
 int
@@ -315,20 +300,19 @@ player_seek(int sec)
 {
 	int status;
 
-	player_clear_status();
 	if (!player.loaded || player.state == PLAYER_STATE_STOPPED) {
-		PLAYER_STATUS_ERR("No track loaded");
-		return PLAYER_STATUS_ERR;
+		PLAYER_STATUS("No track loaded");
+		return PLAYER_ERR;
 	}
 
 	status = mpd_run_seek_current(mpd.conn, sec, false);
 	if (!mpd_handle_status(status))
-		return PLAYER_STATUS_ERR;
+		return PLAYER_ERR;
 
 	mpd.seek_delay = 7;
 	player_pause();
 
-	return PLAYER_STATUS_OK;
+	return PLAYER_OK;
 }
 
 int
@@ -336,17 +320,16 @@ player_set_volume(unsigned int vol)
 {
 	int status;
 
-	player_clear_status();
 	if (player.volume == -1) {
-		PLAYER_STATUS_ERR("Volume control not supported");
-		return PLAYER_STATUS_ERR;
+		PLAYER_STATUS("Volume control not supported");
+		return PLAYER_ERR;
 	}
 
 	status = mpd_run_set_volume(mpd.conn, vol);
 	if (!mpd_handle_status(status))
-		return PLAYER_STATUS_ERR;
+		return PLAYER_ERR;
 	player.volume = vol;
 
-	return PLAYER_STATUS_OK;
+	return PLAYER_OK;
 }
 

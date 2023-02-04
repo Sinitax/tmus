@@ -129,8 +129,8 @@ int track_show_playlist;
 struct listnav tag_nav;
 struct listnav track_nav;
 
-char *cmd_status;
-int cmd_status_uptime;
+char *user_status;
+int user_status_uptime;
 
 void
 pane_title(struct pane *pane, bool highlight, const char *fmtstr, ...)
@@ -554,10 +554,10 @@ delete_selected_track(void)
 
 	if (!trash_tag || !strcmp(track->tag->name, "trash")) {
 		if (!track_rm(track, true))
-			CMD_SET_STATUS("Failed to remove track");
+			USER_STATUS("Failed to remove track");
 	} else {
 		if (!track_move(track, trash_tag))
-			CMD_SET_STATUS("Failed to trash track");
+			USER_STATUS("Failed to trash track");
 	}
 
 	return true;
@@ -707,10 +707,10 @@ run_cmd(const char *query)
 	bool success, found;
 
 	success = cmd_run(query, &found);
-	if (!success && !cmd_status)
-		CMD_SET_STATUS("FAIL");
-	else if (success && !cmd_status)
-		CMD_SET_STATUS("OK");
+	if (!success && !user_status)
+		USER_STATUS("FAIL");
+	else if (success && !user_status)
+		USER_STATUS("OK");
 
 	return found;
 }
@@ -831,19 +831,19 @@ cmd_pane_input(wint_t c)
 
 		if (cmd_input_mode == IMODE_EXECUTE) {
 			if (!run_cmd(history->sel->buf))
-				CMD_SET_STATUS("No such command");
+				USER_STATUS("No such command");
 		} else if (cmd_input_mode == IMODE_TRACK_PLAY) {
 			if (!play_track(history->sel->buf))
-				CMD_SET_STATUS("Failed to find track");
+				USER_STATUS("Failed to find track");
 		} else if (cmd_input_mode == IMODE_TRACK_SELECT) {
 			if (!seek_track_by_name(history->sel->buf))
-				CMD_SET_STATUS("Failed to find track");
+				USER_STATUS("Failed to find track");
 		} else if (cmd_input_mode == IMODE_TRACK_VIS_SELECT) {
 			if (!seek_track_vis_by_name(history->sel->buf))
-				CMD_SET_STATUS("Failed to find track in view");
+				USER_STATUS("Failed to find track in view");
 		} else if (cmd_input_mode == IMODE_TAG_SELECT) {
 			if (!seek_tag(history->sel->buf))
-				CMD_SET_STATUS("Failed to find tag");
+				USER_STATUS("Failed to find tag");
 		}
 
 		history_submit(history);
@@ -958,8 +958,8 @@ cmd_pane_vis(struct pane *pane, int sel)
 		/* cmd and search input */
 		strbuf_clear(&line);
 
-		free(cmd_status);
-		cmd_status = NULL;
+		free(user_status);
+		user_status = NULL;
 
 		cmd = history->sel;
 		if (cmd != history->input) {
@@ -986,14 +986,14 @@ cmd_pane_vis(struct pane *pane, int sel)
 				? cmd->buf[cmd->cur] : L' ');
 			ATTR_OFF(pane->win, A_REVERSE);
 		}
-	} else if (cmd_status && cmd_status_uptime) {
-		cmd_status_uptime--;
+	} else if (user_status && user_status_uptime) {
+		user_status_uptime--;
 		strbuf_clear(&line);
-		strbuf_append(&line, " %s", cmd_status);
+		strbuf_append(&line, " %s", user_status);
 		pane_writeln(pane, 2, line.buf);
 	} else {
-		free(cmd_status);
-		cmd_status = NULL;
+		free(user_status);
+		user_status = NULL;
 	}
 }
 
@@ -1211,8 +1211,8 @@ tui_init(void)
 	quit = 0;
 	cmd_input_mode = IMODE_TRACK_SELECT;
 
-	cmd_status = NULL;
-	cmd_status_uptime = 0;
+	user_status = NULL;
+	user_status_uptime = 0;
 
 	inputln_init(&completion_query);
 	completion_reset = 1;
@@ -1247,7 +1247,7 @@ tui_init(void)
 void
 tui_deinit(void)
 {
-	free(cmd_status);
+	free(user_status);
 
 	inputln_deinit(&completion_query);
 
