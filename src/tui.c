@@ -294,7 +294,7 @@ rename_current_tag(void)
 	struct tag *tag;
 	char *cmd;
 
-	link = list_at(&tags, track_nav.sel);
+	link = list_at(&tags, tag_nav.sel);
 	if (!link) return false;
 	tag = UPCAST(link, struct tag, link);
 

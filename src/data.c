@@ -626,7 +626,10 @@ acquire_lock(const char *datadir)
 	}
 
 	file = fopen(lockpath, "w+");
-	if (file == NULL) return false;
+	if (file == NULL) {
+		free(lockpath);
+		return false;
+	}
 	snprintf(linebuf, sizeof(linebuf), "%i", getpid());
 	fputs(linebuf, file);
 	fclose(file);
@@ -668,7 +671,7 @@ data_load(void)
 	if (!datadir) ERRORX(USER, "TMUS_DATA not set");
 
 	if (!acquire_lock(datadir))
-		ERRORX(USER, "Data directory in use");
+		ERRORX(USER, "Failed to lock datadir");
 
 	dir = opendir(datadir);
 	if (!dir) ERROR(SYSTEM, "opendir %s", datadir);
