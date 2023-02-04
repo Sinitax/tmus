@@ -184,7 +184,6 @@ player_update(void)
 
 	fprintf(mplay.stdin, "status\n");
 	line = mplay_readline();
-	if (!player.loaded) return;
 	if (!line || strncmp(line, "+STATUS:", 8)) {
 		MPLAY_STATUS(line);
 		return;
@@ -211,6 +210,7 @@ player_play_track(struct track *track, bool new)
 	ASSERT(track != NULL);
 
 	player_clear_track();
+	player.track = track;
 
 	if (!mplay_run(track))
 		return PLAYER_ERR;
@@ -218,7 +218,6 @@ player_play_track(struct track *track, bool new)
 	/* new invocations are removed from history */
 	if (new) link_pop(&track->link_hs);
 
-	player.track = track;
 	player.time_pos = 0;
 	player.time_end = 0;
 
