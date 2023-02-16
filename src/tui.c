@@ -17,9 +17,10 @@
 
 #include <ncurses.h>
 
+#include <unistd.h>
+#include <errno.h>
 #include <ctype.h>
 #include <string.h>
-#include <unistd.h>
 
 #undef KEY_ENTER
 #define KEY_ENTER '\n'
@@ -589,8 +590,10 @@ delete_current_track(void)
 		if (!track_rm(track, true))
 			USER_STATUS("Failed to remove track");
 	} else {
-		if (!track_move(track, trash_tag))
+		if (!track_move(track, trash_tag) && errno != EEXIST)
 			USER_STATUS("Failed to trash track");
+		if (!track_rm(track, true))
+			USER_STATUS("Failed to remove track");
 	}
 
 	return true;
