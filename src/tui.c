@@ -53,31 +53,30 @@ static bool toggle_current_tag(void);
 static void select_only_current_tag(void);
 static void seek_next_selected_tag(void);
 static void delete_current_tag(void);
-
 static bool tag_pane_input(wint_t c);
 static void tag_pane_vis(struct pane *pane, int sel);
 
-static bool play_selected_track(void);
-static bool seek_track_tag(struct track *target);
-static bool seek_track(struct track *target);
+static bool play_current_track(void);
+static bool nav_to_playing_track_tag(struct track *target);
+static bool nav_to_playing_track(struct track *target);
 static bool rename_current_track(void);
 static bool delete_current_track(void);
-
+static void queue_current_track(void);
 static bool track_pane_input(wint_t c);
 static void track_pane_vis(struct pane *pane, int sel);
 
 static void select_cmd_pane(int mode);
 static bool run_cmd(const char *name);
 static bool play_track(const char *name);
-static bool seek_track_by_name(const char *name);
-static bool seek_track_vis_by_name(const char *name);
+static bool nav_to_track_by_name(const char *name);
+static bool nav_to_vis_track_by_name(const char *name);
 static bool seek_tag(const char *name);
-
 static bool cmd_pane_input(wint_t c);
 static void cmd_pane_vis(struct pane *pane, int sel);
 
-static void queue_hover(void);
 static void update_tracks_vis(void);
+static void reindex_selected_tags(void);
+static void reindex_current_tag(void);
 static void main_input(wint_t c);
 static void main_vis(void);
 
@@ -505,7 +504,7 @@ tag_pane_vis(struct pane *pane, int sel)
 }
 
 bool
-play_selected_track(void)
+play_current_track(void)
 {
 	struct link *link;
 	struct track *track;
@@ -519,7 +518,7 @@ play_selected_track(void)
 }
 
 bool
-seek_track_tag(struct track *target)
+nav_to_playing_track_tag(struct track *target)
 {
 	int index;
 
@@ -535,7 +534,7 @@ seek_track_tag(struct track *target)
 }
 
 bool
-seek_track(struct track *target)
+nav_to_playing_track(struct track *target)
 {
 	struct link *link;
 	struct track *track;
@@ -599,6 +598,19 @@ delete_current_track(void)
 	return true;
 }
 
+void
+queue_current_track(void)
+{
+	struct link *link;
+	struct track *track;
+
+	link = list_at(tracks_vis, track_nav.sel);
+	if (!link) return;
+
+	track = tracks_vis_track(link);
+	list_push_back(&player.queue, &track->link_pq);
+}
+
 bool
 track_pane_input(wint_t c)
 {
@@ -610,7 +622,7 @@ track_pane_input(wint_t c)
 		listnav_update_sel(&track_nav, track_nav.sel + 1);
 		break;
 	case KEY_ENTER: /* play track */
-		play_selected_track();
+		play_current_track();
 		break;
 	case KEY_PPAGE: /* seek half page up */
 		listnav_update_sel(&track_nav,
@@ -629,8 +641,11 @@ track_pane_input(wint_t c)
 	case L'G': /* seek end of list */
 		listnav_update_sel(&track_nav, track_nav.max - 1);
 		break;
+	case L'y': /* queue track */
+		queue_current_track();
+		break;
 	case L'n': /* seek playing */
-		seek_track(player.track);
+		nav_to_playing_track(player.track);
 		break;
 	case L'D': /* delete track */
 		delete_current_track();
@@ -769,7 +784,7 @@ play_track(const char *query)
 }
 
 bool
-seek_track_by_name(const char *query)
+nav_to_track_by_name(const char *query)
 {
 	struct track *track;
 	struct link *link;
@@ -777,8 +792,8 @@ seek_track_by_name(const char *query)
 	for (LIST_ITER(&tracks, link)) {
 		track = UPCAST(link, struct track, link);
 		if (!strcmp(track->name, query)) {
-			seek_track_tag(track);
-			seek_track(track);
+			nav_to_playing_track_tag(track);
+			nav_to_playing_track(track);
 			pane_after_cmd = track_pane;
 			return true;
 		}
@@ -788,7 +803,7 @@ seek_track_by_name(const char *query)
 }
 
 bool
-seek_track_vis_by_name(const char *query)
+nav_to_vis_track_by_name(const char *query)
 {
 	struct track *track;
 	struct link *link;
@@ -796,7 +811,7 @@ seek_track_vis_by_name(const char *query)
 	for (LIST_ITER(tracks_vis, link)) {
 		track = tracks_vis_track(link);
 		if (!strcmp(track->name, query)) {
-			seek_track(track);
+			nav_to_playing_track(track);
 			pane_after_cmd = track_pane;
 			return true;
 		}
@@ -872,10 +887,10 @@ cmd_pane_input(wint_t c)
 			if (!play_track(history->sel->buf))
 				USER_STATUS("Failed to find track");
 		} else if (cmd_input_mode == IMODE_TRACK_SELECT) {
-			if (!seek_track_by_name(history->sel->buf))
+			if (!nav_to_track_by_name(history->sel->buf))
 				USER_STATUS("Failed to find track");
 		} else if (cmd_input_mode == IMODE_TRACK_VIS_SELECT) {
-			if (!seek_track_vis_by_name(history->sel->buf))
+			if (!nav_to_vis_track_by_name(history->sel->buf))
 				USER_STATUS("Failed to find track in view");
 		} else if (cmd_input_mode == IMODE_TAG_SELECT) {
 			if (!seek_tag(history->sel->buf))
@@ -1034,19 +1049,6 @@ cmd_pane_vis(struct pane *pane, int sel)
 }
 
 void
-queue_hover(void)
-{
-	struct link *link;
-	struct track *track;
-
-	link = list_at(tracks_vis, track_nav.sel);
-	if (!link) return;
-
-	track = tracks_vis_track(link);
-	list_push_back(&player.queue, &track->link_pq);
-}
-
-void
 update_tracks_vis(void)
 {
 	struct link *link;
@@ -1065,12 +1067,34 @@ update_tracks_vis(void)
 }
 
 void
+reindex_selected_tags(void)
+{
+	struct link *link;
+	struct tag *tag;
+
+	for (LIST_ITER(&tags_sel, link)) {
+		tag = UPCAST(link, struct tag, link_sel);
+		tracks_update(tag);
+	}
+}
+
+void
+reindex_current_tag(void)
+{
+	struct link *link;
+	struct tag *tag;
+
+	link = list_at(&tags, tag_nav.sel);
+	if (!link) return;
+
+	tag = UPCAST(link, struct tag, link);
+	tracks_update(tag);
+}
+
+void
 main_input(wint_t c)
 {
 	switch (c) {
-	case KEY_CTRL('r'):
-		redrawwin(stdscr);
-		break;
 	case KEY_TAB:
 		pane_sel = pane_sel == &pane_left
 			? &pane_right : &pane_left;
@@ -1086,9 +1110,6 @@ main_input(wint_t c)
 	case KEY_RIGHT:
 		if (!player.loaded) break;
 		player_seek(player.time_pos + 10);
-		break;
-	case L'y':
-		queue_hover();
 		break;
 	case L'o':
 		list_clear(&player.queue);
@@ -1151,15 +1172,21 @@ main_input(wint_t c)
 		clear();
 		refresh();
 		break;
+	case KEY_CTRL(L'r'):
+		if (track_show_playlist)
+			reindex_selected_tags();
+		else
+			reindex_current_tag();
+		break;
 	case L'q':
 		quit = 1;
 		break;
 	case L'N':
-		if (!seek_track_tag(player.track))
+		if (!nav_to_playing_track_tag(player.track))
 			return;
 		track_show_playlist = false;
 		update_tracks_vis();
-		seek_track(player.track);
+		nav_to_playing_track(player.track);
 		pane_sel = track_pane;
 		break;
 	}
