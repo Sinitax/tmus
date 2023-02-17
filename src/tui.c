@@ -62,6 +62,7 @@ static bool nav_to_track(struct track *target);
 static bool rename_current_track(void);
 static bool delete_current_track(void);
 static void queue_current_track(void);
+static void unqueue_last_track(void);
 static bool track_pane_input(wint_t c);
 static void track_pane_vis(struct pane *pane, int sel);
 
@@ -611,6 +612,16 @@ queue_current_track(void)
 	list_push_back(&player.queue, &track->link_pq);
 }
 
+void
+unqueue_last_track(void)
+{
+	struct link *link;
+
+	link = list_back(&player.queue);
+	if (!link) return;
+	link_pop(link);
+}
+
 bool
 track_pane_input(wint_t c)
 {
@@ -641,8 +652,11 @@ track_pane_input(wint_t c)
 	case L'G': /* seek end of list */
 		listnav_update_sel(&track_nav, track_nav.max - 1);
 		break;
-	case L'y': /* queue track */
+	case L'y': /* push queue track */
 		queue_current_track();
+		break;
+	case L'Y': /* pop queue track */
+		unqueue_last_track();
 		break;
 	case L'n': /* seek playing */
 		nav_to_track(player.track);
