@@ -4,10 +4,22 @@
 #include "player.h"
 #include "tui.h"
 
+#include <curses.h>
 #include <locale.h>
 
+static void stop(int sig);
 static void init(void);
 static void cleanup(int code, void *arg);
+
+void
+stop(int sig)
+{
+	if (player.loaded) {
+		player_stop();
+	} else {
+		exit(0);
+	}
+}
 
 void
 init(void)
@@ -26,7 +38,7 @@ init(void)
 	dbus_init();
 
 	on_exit(cleanup, NULL);
-	signal(SIGINT, exit);
+	signal(SIGINT, stop);
 	signal(SIGTERM, exit);
 	signal(SIGKILL, exit);
 }

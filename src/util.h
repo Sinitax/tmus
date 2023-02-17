@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
@@ -34,3 +35,5 @@ char *appendstrf(char *alloc, const char *fmtstr, ...);
 char *sanitized(const char *instr);
 
 const char *timestr(unsigned int seconds);
+
+uint64_t current_ms(void);

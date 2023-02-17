@@ -1,4 +1,4 @@
-#include <stdio.h>
+#include <bits/time.h>
 #define _XOPEN_SOURCE 600
 #define _GNU_SOURCE
 
@@ -6,6 +6,7 @@
 #include "util.h"
 #include "log.h"
 
+#include <time.h>
 #include <execinfo.h>
 #include <errno.h>
 #include <stdarg.h>
@@ -188,3 +189,14 @@ timestr(unsigned int secs)
 	return buf;
 }
 
+uint64_t
+current_ms(void)
+{
+	struct timespec tp;
+	uint64_t ms;
+
+	clock_gettime(CLOCK_REALTIME, &tp);
+	ms = tp.tv_sec * 1000UL + tp.tv_nsec / 1000000UL;
+
+	return ms;
+}

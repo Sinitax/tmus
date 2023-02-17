@@ -27,6 +27,7 @@ struct mplay_player {
 	FILE *stdin;
 	FILE *stdout;
 	pid_t pid;
+	uint64_t update_ms;
 };
 
 struct player player;
@@ -182,25 +183,28 @@ player_update(void)
 
 	if (!player.loaded) return;
 
-	fprintf(mplay.stdin, "status\n");
-	line = mplay_readline();
-	if (!line || strncmp(line, "+STATUS:", 8)) {
-		MPLAY_STATUS(line);
-		return;
-	}
-
-	tok = line;
-	while ((tok = strchr(tok, ' '))) {
-		if (!strncmp(tok + 1, "vol:", 4)) {
-			player.volume = atoi(tok + 5);
-		} else if (!strncmp(tok + 1, "pause:", 6)) {
-			player.state = atoi(tok + 7)
-				? PLAYER_STATE_PAUSED : PLAYER_STATE_PLAYING;
-		} else if (!strncmp(tok + 1, "pos:", 4)) {
-			player.time_pos = atoi(tok + 5);
-			player.time_end = MAX(player.time_pos, player.time_end);
+	if (current_ms() >= mplay.update_ms + 330) {
+		mplay.update_ms = current_ms();
+		fprintf(mplay.stdin, "status\n");
+		line = mplay_readline();
+		if (!line || strncmp(line, "+STATUS:", 8)) {
+			MPLAY_STATUS(line);
+			return;
 		}
-		tok += 1;
+
+		tok = line;
+		while ((tok = strchr(tok, ' '))) {
+			if (!strncmp(tok + 1, "vol:", 4)) {
+				player.volume = atoi(tok + 5);
+			} else if (!strncmp(tok + 1, "pause:", 6)) {
+				player.state = atoi(tok + 7)
+					? PLAYER_STATE_PAUSED : PLAYER_STATE_PLAYING;
+			} else if (!strncmp(tok + 1, "pos:", 4)) {
+				player.time_pos = atoi(tok + 5);
+				player.time_end = MAX(player.time_pos, player.time_end);
+			}
+			tok += 1;
+		}
 	}
 }
 
