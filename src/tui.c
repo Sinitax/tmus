@@ -590,8 +590,8 @@ delete_current_track(void)
 			USER_STATUS("Failed to remove track");
 	} else {
 		if (!track_move(track, trash_tag) && errno != EEXIST)
-			USER_STATUS("Failed to trash track");
-		if (!track_rm(track, true))
+			USER_STATUS("Failed to trash track: %s", strerror(errno));
+		if (errno == EEXIST && !track_rm(track, true))
 			USER_STATUS("Failed to remove track");
 	}
 

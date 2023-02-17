@@ -566,6 +566,8 @@ track_move(struct track *track, struct tag *tag)
 	struct track *new;
 	char *newpath;
 
+	errno = 0;
+
 	newpath = aprintf("%s/%s", tag->fpath, track->name);
 	if (path_exists(newpath)) {
 		free(newpath);
