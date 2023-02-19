@@ -188,7 +188,9 @@ player_update(void)
 		fprintf(mplay.stdin, "status\n");
 		line = mplay_readline();
 		if (!line || strncmp(line, "+STATUS:", 8)) {
-			MPLAY_STATUS(line);
+			mplay_kill();
+			if (!line || strncmp(line, "+EXIT:", 6))
+				MPLAY_STATUS(line);
 			return;
 		}
 
@@ -248,6 +250,7 @@ player_toggle_pause(void)
 	fprintf(mplay.stdin, "pause\n");
 	line = mplay_readline();
 	if (!line || strncmp(line, "+PAUSE:", 7)) {
+		mplay_kill();
 		MPLAY_STATUS(line);
 		return PLAYER_ERR;
 	}
@@ -295,6 +298,9 @@ player_seek(int sec)
 	fprintf(mplay.stdin, "seek %i\n", sec);
 	line = mplay_readline();
 	if (!line || strncmp(line, "+SEEK:", 6)) {
+		mplay_kill();
+		if (line && !strncmp(line, "+EXIT:", 6))
+			return PLAYER_OK;
 		MPLAY_STATUS(line);
 		return PLAYER_ERR;
 	}
@@ -318,6 +324,7 @@ player_set_volume(unsigned int vol)
 	fprintf(mplay.stdin, "vol %i\n", vol);
 	line = mplay_readline();
 	if (!line || strncmp(line, "+VOLUME:", 8)) {
+		mplay_kill();
 		MPLAY_STATUS(line);
 		return PLAYER_ERR;
 	}
