@@ -77,7 +77,6 @@ static void cmd_pane_vis(struct pane *pane, int sel);
 
 static void update_tracks_vis(void);
 static void reindex_selected_tags(void);
-static void reindex_current_tag(void);
 static void main_input(wint_t c);
 static void main_vis(void);
 
@@ -1101,24 +1100,39 @@ reindex_selected_tags(void)
 {
 	struct link *link;
 	struct tag *tag;
+	struct track *track;
+	struct tag *playing_tag;
+	char *playing_name;
 
-	for (LIST_ITER(&tags_sel, link)) {
-		tag = UPCAST(link, struct tag, link_sel);
+	playing_tag = NULL;
+	playing_name = NULL;
+
+	if (player.track) {
+		playing_tag = player.track->tag;
+		playing_name = astrdup(player.track->name);
+	}
+
+	if (track_show_playlist) {
+		for (LIST_ITER(&tags_sel, link)) {
+			tag = UPCAST(link, struct tag, link_sel);
+			tracks_update(tag);
+		}
+	} else {
+		link = list_at(&tags, tag_nav.sel);
+		if (!link) return;
+		tag = UPCAST(link, struct tag, link);
 		tracks_update(tag);
 	}
-}
 
-void
-reindex_current_tag(void)
-{
-	struct link *link;
-	struct tag *tag;
-
-	link = list_at(&tags, tag_nav.sel);
-	if (!link) return;
-
-	tag = UPCAST(link, struct tag, link);
-	tracks_update(tag);
+	if (playing_tag) {
+		for (LIST_ITER(&playing_tag->tracks, link)) {
+			track = UPCAST(link, struct track, link_tt);
+			if (!strcmp(track->name, playing_name)) {
+				player.track = track;
+				break;
+			}
+		}
+	}
 }
 
 void
@@ -1203,10 +1217,7 @@ main_input(wint_t c)
 		refresh();
 		break;
 	case KEY_CTRL(L'r'):
-		if (track_show_playlist)
-			reindex_selected_tags();
-		else
-			reindex_current_tag();
+		reindex_selected_tags();
 		break;
 	case L'q':
 		quit = 1;
