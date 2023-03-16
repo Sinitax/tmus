@@ -660,7 +660,17 @@ track_vis_name_cmp(struct link *l1, struct link *l2)
 void
 sort_visible_tracks(void)
 {
+	struct link *link;
+	struct tag *tag;
+
 	list_sort(tracks_vis, false, track_vis_name_cmp);
+
+	if (!track_show_playlist) {
+		link = list_at(&tags, tag_nav.sel);
+		if (!link) return;
+		tag = LINK_UPCAST(link, struct tag, link);
+		tag->reordered = true;
+	}
 }
 
 bool
@@ -1160,13 +1170,13 @@ reindex_selected_tags(void)
 	if (track_show_playlist) {
 		for (LIST_ITER(&tags_sel, link)) {
 			tag = UPCAST(link, struct tag, link_sel);
-			tracks_update(tag);
+			tag_reindex_tracks(tag);
 		}
 	} else {
 		link = list_at(&tags, tag_nav.sel);
 		if (!link) return;
 		tag = UPCAST(link, struct tag, link);
-		tracks_update(tag);
+		tag_reindex_tracks(tag);
 	}
 
 	if (playing_tag) {

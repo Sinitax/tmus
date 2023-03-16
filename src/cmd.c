@@ -51,7 +51,15 @@ cmd_status_from_errno(int err)
 bool
 cmd_save(const char *args)
 {
-	data_save();
+	struct link *link;
+	struct tag *tag;
+
+	for (LIST_ITER(&tags, link)) {
+		tag = UPCAST(link, struct tag, link);
+		if (tag->index_dirty || tag->reordered)
+			tag_save_tracks(tag);
+	}
+
 	return true;
 }
 
@@ -191,7 +199,7 @@ cmd_reindex(const char *name)
 	/* update each tag specified */
 	for (LIST_ITER(&matches, link)) {
 		ref = UPCAST(link, struct ref, link);
-		if (!tracks_update(ref->data))
+		if (!tag_reindex_tracks(ref->data))
 			goto cleanup;
 	}
 

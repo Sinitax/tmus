@@ -30,8 +30,7 @@ static void tag_free(struct tag *tag);
 static struct track *track_alloc(const char *path, const char *fname);
 static void track_free(struct track *t);
 
-static void tracks_load(struct tag *tag);
-static void tracks_save(struct tag *tag);
+static bool tag_name_cmp(struct link *l1, struct link *l2);
 
 struct tag *
 tag_alloc(const char *path, const char *fname)
@@ -44,6 +43,7 @@ tag_alloc(const char *path, const char *fname)
 	tag->fpath = aprintf("%s/%s", path, fname);
 	tag->name = astrdup(fname);
 	tag->index_dirty = false;
+	tag->reordered = false;
 	tag->link = LINK_EMPTY;
 	tag->link_sel = LINK_EMPTY;
 	list_init(&tag->tracks);
@@ -88,62 +88,15 @@ track_free(struct track *t)
 	free(t);
 }
 
-void
-tracks_load(struct tag *tag)
+bool
+tag_name_cmp(struct link *l1, struct link *l2)
 {
-	char linebuf[1024];
-	char *index_path;
-	FILE *file;
+	struct tag *t1, *t2;
 
-	index_path = aprintf("%s/index", tag->fpath);
-	file = fopen(index_path, "r");
-	if (file == NULL) {
-		index_update(tag); /* create index */
-		file = fopen(index_path, "r");
-		if (!file) ERROR(SYSTEM, "fopen %s", tag->name);
-	}
+	t1 = LINK_UPCAST(l1, struct tag, link);
+	t2 = LINK_UPCAST(l2, struct tag, link);
 
-	while (fgets(linebuf, sizeof(linebuf), file)) {
-		if (!*linebuf) continue;
-		if (linebuf[strlen(linebuf) - 1] == '\n')
-			linebuf[strlen(linebuf) - 1] = '\0';
-		track_add(tag, linebuf);
-	}
-
-	tag->index_dirty = false;
-
-	fclose(file);
-	free(index_path);
-}
-
-void
-tracks_save(struct tag *tag)
-{
-	struct track *track;
-	struct link *link;
-	char *index_path;
-	FILE *file;
-
-	/* write playlist back to index file */
-
-	index_path = aprintf("%s/index", tag->fpath);
-	file = fopen(index_path, "w+");
-	if (!file) {
-		WARNX(SYSTEM, "Failed to write to index file: %s",
-			index_path);
-		free(index_path);
-		return;
-	}
-
-	for (LIST_ITER(&tag->tracks, link)) {
-		track = UPCAST(link, struct track, link_tt);
-		fprintf(file, "%s\n", track->name);
-	}
-
-	tag->index_dirty = false;
-
-	fclose(file);
-	free(index_path);
+	return strcmp(t1->name, t2->name) <= 0;
 }
 
 bool
@@ -259,55 +212,85 @@ move_file(const char *src, const char *dst)
 }
 
 void
-index_update(struct tag *tag)
-{
-	struct dirent *ent;
-	char *index_path;
-	FILE *file;
-	DIR *dir;
-
-	dir = opendir(tag->fpath);
-	if (!dir) ERROR(SYSTEM, "opendir %s", tag->fpath);
-
-	index_path = aprintf("%s/index", tag->fpath);
-
-	file = fopen(index_path, "w+");
-	if (!file) ERROR(SYSTEM, "fopen %s/index", tag->name);
-	free(index_path);
-
-	while ((ent = readdir(dir))) {
-		if (!strcmp(ent->d_name, "."))
-			continue;
-		if (!strcmp(ent->d_name, ".."))
-			continue;
-
-		/* skip files without extension */
-		if (!strchr(ent->d_name + 1, '.'))
-			continue;
-
-		fprintf(file, "%s\n", ent->d_name);
-	}
-
-	closedir(dir);
-	fclose(file);
-}
-
-bool
-tracks_update(struct tag *tag)
+tag_clear_tracks(struct tag *tag)
 {
 	struct link *link;
 	struct track *track;
-	struct dirent *ent;
-	DIR *dir;
-
-	dir = opendir(tag->fpath);
-	if (!dir) return false;
 
 	while (!list_empty(&tag->tracks)) {
 		link = list_pop_front(&tag->tracks);
 		track = UPCAST(link, struct track, link_tt);
 		track_rm(track, false);
 	}
+}
+
+void
+tag_load_tracks(struct tag *tag)
+{
+	char linebuf[1024];
+	char *index_path;
+	FILE *file;
+
+	index_path = aprintf("%s/index", tag->fpath);
+	file = fopen(index_path, "r");
+	if (file == NULL) {
+		tag_reindex_tracks(tag);
+		return;
+	}
+
+	while (fgets(linebuf, sizeof(linebuf), file)) {
+		if (!*linebuf) continue;
+		if (linebuf[strlen(linebuf) - 1] == '\n')
+			linebuf[strlen(linebuf) - 1] = '\0';
+		track_add(tag, linebuf);
+	}
+
+	tag->index_dirty = false;
+
+	fclose(file);
+	free(index_path);
+}
+
+void
+tag_save_tracks(struct tag *tag)
+{
+	struct track *track;
+	struct link *link;
+	char *index_path;
+	FILE *file;
+
+	/* write playlist back to index file */
+
+	index_path = aprintf("%s/index", tag->fpath);
+	file = fopen(index_path, "w+");
+	if (!file) {
+		WARNX(SYSTEM, "Failed to write to index file: %s",
+			index_path);
+		free(index_path);
+		return;
+	}
+
+	for (LIST_ITER(&tag->tracks, link)) {
+		track = UPCAST(link, struct track, link_tt);
+		fprintf(file, "%s\n", track->name);
+	}
+
+	tag->index_dirty = false;
+
+	fclose(file);
+	free(index_path);
+}
+
+bool
+tag_reindex_tracks(struct tag *tag)
+{
+	struct dirent *ent;
+	DIR *dir;
+
+	dir = opendir(tag->fpath);
+	if (!dir) return false;
+
+	tag_clear_tracks(tag);
 
 	while ((ent = readdir(dir))) {
 		if (!strcmp(ent->d_name, "."))
@@ -690,10 +673,12 @@ data_load(void)
 			tag = tag_add(ent->d_name);
 			if (!strcmp(tag->name, "trash"))
 				trash_tag = tag;
-			tracks_load(tag);
+			tag_load_tracks(tag);
 		}
 		free(path);
 	}
+
+	list_sort(&tags, false, tag_name_cmp);
 
 	playlist_outdated = true;
 
@@ -709,7 +694,7 @@ data_save(void)
 	for (LIST_ITER(&tags, link)) {
 		tag = UPCAST(link, struct tag, link);
 		if (tag->index_dirty)
-			tracks_save(tag);
+			tag_save_tracks(tag);
 	}
 
 	release_lock(datadir);
