@@ -40,7 +40,6 @@ init(void)
 	on_exit(cleanup, NULL);
 	signal(SIGINT, stop);
 	signal(SIGTERM, exit);
-	signal(SIGKILL, exit);
 }
 
 void

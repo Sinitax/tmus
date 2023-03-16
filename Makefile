@@ -41,7 +41,7 @@ build/%.d: | build;
 include $(DEPS)
 
 $(LIBLIST_A):
-	make -C lib/liblist build/liblist.a
+	make -C lib/liblist DEBUG=1 build/liblist.a
 
 tmus: $(OBJS) $(LIBLIST_A)
 	$(CC) -o tmus $^ $(CFLAGS) $(LDLIBS)

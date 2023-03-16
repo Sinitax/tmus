@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #define NCURSES_WIDECHAR 1
 #define _GNU_SOURCE
 
@@ -53,6 +54,8 @@ static bool toggle_current_tag(void);
 static void select_only_current_tag(void);
 static void seek_next_selected_tag(void);
 static void delete_current_tag(void);
+static bool tag_name_cmp(struct link *l1, struct link *l2);
+static void sort_visible_tags(void);
 static bool tag_pane_input(wint_t c);
 static void tag_pane_vis(struct pane *pane, int sel);
 
@@ -63,6 +66,8 @@ static bool rename_current_track(void);
 static bool delete_current_track(void);
 static void queue_current_track(void);
 static void unqueue_last_track(void);
+static bool track_vis_name_cmp(struct link *l1, struct link *l2);
+static void sort_visible_tracks(void);
 static bool track_pane_input(wint_t c);
 static void track_pane_vis(struct pane *pane, int sel);
 
@@ -416,6 +421,23 @@ delete_current_tag(void)
 }
 
 bool
+tag_name_cmp(struct link *l1, struct link *l2)
+{
+	struct tag *t1, *t2;
+
+	t1 = LINK_UPCAST(l1, struct tag, link);
+	t2 = LINK_UPCAST(l2, struct tag, link);
+
+	return strcmp(t1->name, t2->name) <= 0;
+}
+
+void
+sort_visible_tags(void)
+{
+	list_sort(&tags, false, tag_name_cmp);
+}
+
+bool
 tag_pane_input(wint_t c)
 {
 	switch (c) {
@@ -451,6 +473,9 @@ tag_pane_input(wint_t c)
 		break;
 	case L'D': /* delete tag */
 		delete_current_tag();
+		break;
+	case KEY_CTRL(L's'):
+		sort_visible_tags();
 		break;
 	default:
 		return false;
@@ -622,6 +647,23 @@ unqueue_last_track(void)
 }
 
 bool
+track_vis_name_cmp(struct link *l1, struct link *l2)
+{
+	struct track *t1, *t2;
+
+	t1 = tracks_vis_track(l1);
+	t2 = tracks_vis_track(l2);
+
+	return strcmp(t1->name, t2->name) <= 0;
+}
+
+void
+sort_visible_tracks(void)
+{
+	list_sort(tracks_vis, false, track_vis_name_cmp);
+}
+
+bool
 track_pane_input(wint_t c)
 {
 	switch (c) {
@@ -662,6 +704,9 @@ track_pane_input(wint_t c)
 		break;
 	case L'D': /* delete track */
 		delete_current_track();
+		break;
+	case KEY_CTRL(L's'): /* sort track in view */
+		sort_visible_tracks();
 		break;
 	default:
 		return false;
